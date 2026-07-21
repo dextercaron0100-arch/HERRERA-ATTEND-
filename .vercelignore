@@ -1,0 +1,13 @@
+.git
+.runtime
+.vercel
+.vscode
+**/.next
+**/build
+**/.dart_tool
+employee_mobile
+node_modules
+output
+tmp
+docs
+apps/mobile
