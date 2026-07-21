@@ -55,8 +55,10 @@ export class AuthGuard implements CanActivate {
     const identity: GeoAttendIdentity = {
       subject: payload.sub ?? '',
       employeeId: this.claim(payload, 'employee_id') ?? this.nestedClaim(payload, 'public_metadata', 'employeeId'),
-      organizationId: this.claim(payload, 'organization_id') ?? this.claim(payload, 'org_id') ?? this.nestedClaim(payload, 'o', 'id'),
-      role: this.claim(payload, 'role') ?? this.claim(payload, 'org_role') ?? this.nestedClaim(payload, 'o', 'rol'),
+      organizationId: this.claim(payload, 'organization_id') ?? this.claim(payload, 'org_id')
+        ?? this.nestedClaim(payload, 'public_metadata', 'organizationId') ?? this.nestedClaim(payload, 'o', 'id'),
+      role: this.claim(payload, 'role') ?? this.claim(payload, 'org_role')
+        ?? this.nestedClaim(payload, 'public_metadata', 'role') ?? this.nestedClaim(payload, 'o', 'rol'),
     };
     if (!identity.subject || !identity.organizationId) throw new UnauthorizedException('Required identity claims are missing');
     this.assertTenantConsistency(request, identity);
