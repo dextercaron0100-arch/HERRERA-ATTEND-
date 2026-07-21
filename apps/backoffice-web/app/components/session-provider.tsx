@@ -1,11 +1,18 @@
 'use client';
 
-import { createContext, useContext } from 'react';
+import { useAuth } from '@clerk/nextjs';
+import { createContext, useContext, useEffect } from 'react';
 import type { BackofficeSession } from '../lib/session';
+import { setApiTokenProvider } from '../lib/api';
 
 const SessionContext = createContext<BackofficeSession | null>(null);
 
 export function SessionProvider({ session, children }: { session: BackofficeSession; children: React.ReactNode }) {
+  const { getToken } = useAuth();
+  useEffect(() => {
+    setApiTokenProvider(() => getToken());
+    return () => setApiTokenProvider(null);
+  }, [getToken]);
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }
 

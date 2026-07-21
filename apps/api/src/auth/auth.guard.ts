@@ -38,7 +38,7 @@ export class AuthGuard implements CanActivate {
     const authorization = request.headers.authorization;
     const header = Array.isArray(authorization) ? authorization[0] : authorization;
     if (!header?.startsWith('Bearer ')) throw new UnauthorizedException('Bearer token required');
-    if (!this.jwks || !process.env.JWT_ISSUER || !process.env.JWT_AUDIENCE) {
+    if (!this.jwks || !process.env.JWT_ISSUER) {
       throw new UnauthorizedException('JWT verification is not configured');
     }
 
@@ -46,7 +46,7 @@ export class AuthGuard implements CanActivate {
     try {
       ({ payload } = await jwtVerify(header.slice(7), this.jwks, {
         issuer: process.env.JWT_ISSUER,
-        audience: process.env.JWT_AUDIENCE,
+        ...(process.env.JWT_AUDIENCE ? { audience: process.env.JWT_AUDIENCE } : {}),
       }));
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
@@ -54,9 +54,9 @@ export class AuthGuard implements CanActivate {
 
     const identity: GeoAttendIdentity = {
       subject: payload.sub ?? '',
-      employeeId: this.claim(payload, 'employee_id'),
-      organizationId: this.claim(payload, 'organization_id'),
-      role: this.claim(payload, 'role'),
+      employeeId: this.claim(payload, 'employee_id') ?? this.nestedClaim(payload, 'public_metadata', 'employeeId'),
+      organizationId: this.claim(payload, 'organization_id') ?? this.claim(payload, 'org_id') ?? this.nestedClaim(payload, 'o', 'id'),
+      role: this.claim(payload, 'role') ?? this.claim(payload, 'org_role') ?? this.nestedClaim(payload, 'o', 'rol'),
     };
     if (!identity.subject || !identity.organizationId) throw new UnauthorizedException('Required identity claims are missing');
     this.assertTenantConsistency(request, identity);
@@ -69,12 +69,19 @@ export class AuthGuard implements CanActivate {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   }
 
+  private nestedClaim(payload: JWTPayload, parent: string, name: string): string | undefined {
+    const container = payload[parent];
+    if (!container || typeof container !== 'object' || Array.isArray(container)) return undefined;
+    const value = (container as Record<string, unknown>)[name];
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  }
+
   private assertTenantConsistency(request: RequestShape, identity: GeoAttendIdentity) {
     const supplied = { ...request.query, ...request.body };
     if (supplied.organizationId && supplied.organizationId !== identity.organizationId) {
       throw new ForbiddenException('Cross-organization access denied');
     }
-    if (supplied.actorId && supplied.actorId !== identity.employeeId) {
+    if (supplied.actorId && (!identity.employeeId || supplied.actorId !== identity.employeeId)) {
       throw new ForbiddenException('Actor identity does not match token');
     }
     if (identity.role === 'EMPLOYEE' && supplied.employeeId && supplied.employeeId !== identity.employeeId) {

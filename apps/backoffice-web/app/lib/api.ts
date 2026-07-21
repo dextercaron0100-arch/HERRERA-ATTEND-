@@ -7,10 +7,22 @@ export const appConfig = {
   financeActorId: process.env.NEXT_PUBLIC_FINANCE_ACTOR_ID ?? '62fe878b-cf3d-498b-956d-51a1dc1baa11',
 };
 
+type TokenProvider = () => Promise<string | null>;
+let tokenProvider: TokenProvider | null = null;
+
+export function setApiTokenProvider(provider: TokenProvider | null) {
+  tokenProvider = provider;
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await tokenProvider?.();
   const response = await fetch(`${appConfig.apiUrl}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { message?: string | string[] } | null;

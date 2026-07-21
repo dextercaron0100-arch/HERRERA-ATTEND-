@@ -1,17 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { SESSION_COOKIE, verifySessionToken } from './app/lib/session';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-export async function proxy(request: NextRequest) {
-  const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
-  const loginPath = request.nextUrl.pathname === '/login';
-  if (loginPath && session) return NextResponse.redirect(new URL('/', request.url));
-  if (!loginPath && !session) {
-    const destination = new URL('/login', request.url);
-    return NextResponse.redirect(destination);
-  }
-  return NextResponse.next();
-}
+const isPublicRoute = createRouteMatcher(['/login(.*)']);
+
+export default clerkMiddleware(async (auth, request) => {
+  if (!isPublicRoute(request)) await auth.protect();
+}, { frontendApiProxy: { enabled: true } });
 
 export const config = {
-  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    '/(api|trpc)(.*)',
+  ],
 };
