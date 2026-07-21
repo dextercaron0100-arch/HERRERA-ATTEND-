@@ -20,5 +20,5 @@ type AuthenticatedRequest = { user?: GeoAttendIdentity };
   @Post('employees') createEmployee(@Body() dto:EmployeeDto){return this.db.employee.create({data:dto});}
   @Get('employees/:id/schedule') schedule(@Param('id') id:string){return this.db.employee.findUniqueOrThrow({where:{id},include:{worksite:true,schedule:{include:{shifts:true}}}});}
   @Get('worksites') worksites(@Query('organizationId') organizationId:string){return this.db.worksite.findMany({where:{organizationId},orderBy:{name:'asc'}});}
-  @Post('worksites') createWorksite(@Body() dto:WorksiteDto){return this.db.employee.create({data:dto as never});}
+  @Post('worksites') createWorksite(@Body() dto:WorksiteDto){return this.db.worksite.create({data:dto});}
 }
