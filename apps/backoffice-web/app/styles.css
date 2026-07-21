@@ -171,3 +171,50 @@ tbody tr:hover .pill,tbody tr:hover .healthTag { transform:translateY(-1px);box-
 .notificationState { min-height:180px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:24px;color:var(--muted);font-size:11px;text-align:center; }.notificationState strong { color:var(--text);font-size:13px; }.notificationState.errorState { color:var(--danger); }
 @media (max-width:780px) { .notificationPanel { position:fixed;top:72px;right:16px;left:16px;width:auto;max-height:calc(100dvh - 90px); }.notificationList { max-height:calc(100dvh - 170px); } }
 @media (prefers-reduced-motion:reduce) { .notificationPanel { animation:none; } }
+
+/* Branded authentication */
+.loginPage { position:relative;min-height:100dvh;display:grid;place-items:center;overflow:hidden;padding:34px;background:#edf3fb;isolation:isolate; }
+.loginPage:before { content:"";position:absolute;inset:0;z-index:-3;background:linear-gradient(135deg,#f7faff 0%,#edf4ff 52%,#fff9e9 100%); }
+.loginGlow { position:absolute;z-index:-2;border-radius:50%;filter:blur(2px);pointer-events:none;animation:login-float 9s ease-in-out infinite alternate; }
+.loginGlowOne { width:440px;height:440px;top:-210px;right:-100px;background:#ffc40020; }
+.loginGlowTwo { width:500px;height:500px;bottom:-270px;left:-180px;background:#075bd817;animation-delay:-3s; }
+.loginShell { width:min(1120px,100%);min-height:680px;display:grid;grid-template-columns:minmax(0,1.04fr) minmax(430px,.96fr);overflow:hidden;border:1px solid #d9e4f2;border-radius:28px;background:#fff;box-shadow:0 30px 90px #09275a1f,0 3px 12px #09275a0d;animation:login-shell-in .65s cubic-bezier(.22,1,.36,1) both; }
+.loginStory { position:relative;display:flex;flex-direction:column;overflow:hidden;padding:48px 52px;color:#fff;background:linear-gradient(145deg,#061d42 0%,#073579 61%,#075bd8 100%); }
+.loginStory:before { content:"";position:absolute;width:440px;height:440px;right:-230px;top:-150px;border:1px solid #ffffff24;border-radius:50%;box-shadow:0 0 0 70px #ffffff08,0 0 0 140px #ffffff06; }
+.loginStory:after { content:"";position:absolute;width:200px;height:200px;left:-100px;bottom:-85px;border-radius:50%;background:var(--accent-yellow);opacity:.92; }
+.loginBrand,.loginMobileBrand { position:relative;z-index:1;display:flex;align-items:center;gap:12px; }
+.loginBrandMark { position:relative;width:46px;height:46px;display:grid;place-items:center;overflow:hidden;border-radius:14px;color:#fff;background:linear-gradient(145deg,#1681ff 0 67%,#ed1c24 67%);box-shadow:inset 0 0 0 1px #ffffff55,0 12px 28px #00133150; }
+.loginBrandMark:after { content:"";position:absolute;right:4px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--accent-yellow); }
+.loginBrand strong,.loginBrand small,.loginMobileBrand strong,.loginMobileBrand small { display:block;line-height:1;letter-spacing:.05em; }
+.loginBrand strong,.loginMobileBrand strong { font-size:17px; }.loginBrand small,.loginMobileBrand small { margin-top:5px;color:#a9cfff;font-size:10px;font-weight:800;letter-spacing:.25em; }
+.loginStoryCopy { position:relative;z-index:1;margin:auto 0 30px;animation:login-rise .6s .1s cubic-bezier(.22,1,.36,1) both; }
+.loginEyebrow { display:inline-flex;align-items:center;gap:8px;color:#80b9ff;font-size:10px;font-weight:800;letter-spacing:.15em; }
+.loginEyebrow>span { width:22px;height:2px;border-radius:2px;background:var(--accent-yellow); }
+.loginStory h1 { margin:20px 0 17px;font-size:clamp(40px,4vw,54px);line-height:1.04;letter-spacing:-.055em; }
+.loginStory h1 em { color:#ffdc54;font-style:normal; }.loginStoryCopy>p { max-width:500px;margin:0;color:#c7ddf8;font-size:15px;line-height:1.7; }
+.loginBenefits { position:relative;z-index:1;display:grid;gap:10px; }
+.loginBenefits article { display:flex;align-items:center;gap:13px;padding:12px 14px;border:1px solid #ffffff14;border-radius:13px;background:#ffffff0a;backdrop-filter:blur(6px);animation:login-rise .55s var(--login-delay) cubic-bezier(.22,1,.36,1) both; }
+.loginBenefits article>span { width:36px;height:36px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;color:#ffdc54;background:#ffffff0e; }
+.loginBenefits strong,.loginBenefits p { display:block;margin:0; }.loginBenefits strong { font-size:12px; }.loginBenefits p { margin-top:3px;color:#aac8ed;font-size:10px;line-height:1.45; }
+.loginAssurance { position:relative;z-index:1;display:flex;align-items:center;gap:7px;margin:22px 0 0;color:#a9c8ed;font-size:10px; }
+.loginAccess { display:flex;align-items:stretch;justify-content:center;flex-direction:column;padding:54px 60px;background:linear-gradient(180deg,#fff,#fbfdff); }
+.loginMobileBrand { display:none; }.loginAccessHead { display:flex;align-items:flex-start;gap:14px;margin:0 auto 25px;width:100%;max-width:390px;animation:login-rise .55s .14s cubic-bezier(.22,1,.36,1) both; }
+.loginLock { width:43px;height:43px;display:grid;place-items:center;flex:0 0 auto;border:1px solid #d4e4fa;border-radius:13px;color:var(--brand);background:var(--brand-soft); }
+.loginAccessHead h2 { margin:7px 0 5px;font-size:29px;line-height:1.1;letter-spacing:-.035em; }.loginAccessHead p { margin:0;color:var(--muted);font-size:12px;line-height:1.5; }
+.herreraClerkRoot { width:100%!important;max-width:390px!important;margin:0 auto!important;animation:login-rise .55s .2s cubic-bezier(.22,1,.36,1) both; }
+.herreraClerkCardBox,.herreraClerkCard { width:100%!important;box-shadow:none!important; }.herreraClerkCard { padding:0!important;background:transparent!important; }
+.herreraClerkHeader,.herreraClerkFooter { display:none!important; }.herreraClerkSocialButton { min-height:46px!important;border:1px solid #d6e1ef!important;border-radius:11px!important;box-shadow:none!important; }.herreraClerkSocialText { font-size:12px!important;font-weight:650!important; }
+.herreraClerkDivider { background:#e4ebf4!important; }.herreraClerkDividerText { color:#8794a7!important;font-size:10px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.08em!important; }
+.herreraClerkLabel { margin-bottom:7px!important;color:#344054!important;font-size:11px!important;font-weight:700!important; }.herreraClerkInput { min-height:48px!important;border:1px solid #cdd9e8!important;border-radius:11px!important;box-shadow:0 1px 2px #09275a0a!important;font-size:13px!important;transition:border-color .18s ease,box-shadow .18s ease!important; }
+.herreraClerkInput:focus { border-color:#5798eb!important;box-shadow:0 0 0 4px #075bd812!important; }.herreraClerkButton { min-height:48px!important;border-radius:11px!important;background:linear-gradient(135deg,#075bd8,#0649b2)!important;font-size:12px!important;font-weight:800!important;box-shadow:0 9px 22px #075bd829!important;transition:transform .18s ease,box-shadow .18s ease!important; }
+.herreraClerkButton:hover { transform:translateY(-1px)!important;box-shadow:0 12px 27px #075bd838!important; }.herreraClerkIdentity { border:1px solid #dbe5f1!important;border-radius:11px!important;background:#f8faff!important; }
+.loginHelp { width:100%;max-width:390px;display:flex;align-items:flex-start;gap:10px;margin:25px auto 0;padding:13px 14px;border:1px solid #e0e8f2;border-radius:12px;color:#718096;background:#f8fafc;animation:login-rise .55s .28s cubic-bezier(.22,1,.36,1) both; }
+.loginHelp svg { flex:0 0 auto;margin-top:1px;color:var(--brand); }.loginHelp p,.loginHelp strong,.loginHelp span { display:block;margin:0; }.loginHelp strong { color:#475467;font-size:10px; }.loginHelp span { margin-top:3px;font-size:10px; }
+.loginFooter { position:absolute;bottom:12px;color:#8090a6;font-size:9px;letter-spacing:.02em; }
+@keyframes login-shell-in { from { opacity:0;transform:translateY(16px) scale(.985); } to { opacity:1;transform:none; } }
+@keyframes login-rise { from { opacity:0;transform:translateY(12px); } to { opacity:1;transform:none; } }
+@keyframes login-float { to { transform:translate3d(20px,-16px,0) scale(1.04); } }
+@media (max-width:900px) { .loginPage { padding:22px; }.loginShell { min-height:620px;grid-template-columns:minmax(0,.85fr) minmax(410px,1.15fr); }.loginStory { padding:40px 34px; }.loginStory h1 { font-size:38px; }.loginBenefits article { padding:10px; }.loginAccess { padding:45px 40px; } }
+@media (max-width:720px) { .loginPage { display:block;min-height:100dvh;padding:0;background:#fff; }.loginShell { min-height:100dvh;display:block;border:0;border-radius:0;box-shadow:none; }.loginStory { display:none; }.loginAccess { min-height:100dvh;padding:36px max(22px,env(safe-area-inset-left)) 34px;justify-content:center; }.loginMobileBrand { display:flex;margin:0 auto 44px;width:100%;max-width:390px;color:#10213d; }.loginMobileBrand small { color:#477bbf; }.loginMobileBrand .loginBrandMark { width:42px;height:42px;border-radius:12px; }.loginAccessHead { margin-bottom:24px; }.loginFooter { position:fixed;right:0;bottom:12px;left:0;text-align:center; }.loginGlow { display:none; } }
+@media (max-width:390px) { .loginAccess { padding-right:18px;padding-left:18px; }.loginMobileBrand { margin-bottom:32px; }.loginAccessHead h2 { font-size:26px; }.loginAccessHead { gap:11px; }.loginLock { width:40px;height:40px; } }
+@media (prefers-reduced-motion:reduce) { .loginShell,.loginStoryCopy,.loginBenefits article,.loginAccessHead,.herreraClerkRoot,.loginHelp,.loginGlow { animation:none!important; } }
