@@ -27,7 +27,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     employeeNumber: stringValue(metadata?.employeeNumber) ?? 'ADMIN-001',
     name: user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Herrera Administrator',
     email: user.primaryEmailAddress?.emailAddress ?? '',
-    role: normalizeRole(orgRole ?? stringValue(metadata?.role)),
+    role: formatRole(orgRole ?? stringValue(metadata?.accessLevel) ?? stringValue(metadata?.role)),
     expiresAt: Date.now() + 8 * 60 * 60 * 1000,
   } : null;
   return (
@@ -59,6 +59,7 @@ function stringValue(value: unknown) {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-function normalizeRole(role: string | undefined) {
-  return role?.replace(/^org:/u, '').toUpperCase() ?? 'ADMIN';
+function formatRole(role: string | undefined) {
+  const normalized = role?.replace(/^org:/u, '').replaceAll('_', ' ').toLowerCase() ?? 'admin';
+  return normalized.replace(/\b\w/gu, character => character.toUpperCase());
 }
