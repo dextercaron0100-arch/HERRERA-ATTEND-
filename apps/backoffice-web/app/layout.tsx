@@ -19,9 +19,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const { userId, orgId, orgRole } = await auth();
   const user = userId ? await currentUser() : null;
   const metadata = user?.publicMetadata as Record<string, unknown> | undefined;
-  const session: BackofficeSession | null = user ? {
-    employeeId: stringValue(metadata?.employeeId) ?? process.env.NEXT_PUBLIC_HR_ACTOR_ID ?? 'b9336ab3-e69b-40b0-a664-3ff6cb553879',
-    organizationId: orgId ?? stringValue(metadata?.organizationId) ?? process.env.NEXT_PUBLIC_ORGANIZATION_ID ?? '5e80ccd3-7b82-495f-a511-db88914085c2',
+  const employeeId = stringValue(metadata?.employeeId);
+  const organizationId = orgId ?? stringValue(metadata?.organizationId);
+  const session: BackofficeSession | null = user && employeeId && organizationId ? {
+    employeeId,
+    organizationId,
     employeeNumber: stringValue(metadata?.employeeNumber) ?? 'ADMIN-001',
     name: user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Herrera Administrator',
     email: user.primaryEmailAddress?.emailAddress ?? '',
@@ -32,10 +34,24 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
       <body>
         <ClerkProvider>
-          {session ? <SessionProvider session={session}><AppShell>{children}</AppShell></SessionProvider> : children}
+          {session
+            ? <SessionProvider session={session}><AppShell>{children}</AppShell></SessionProvider>
+            : user
+              ? <AccessSetupRequired />
+              : children}
         </ClerkProvider>
       </body>
     </html>
+  );
+}
+
+function AccessSetupRequired() {
+  return (
+    <main className="statePanel">
+      <span className="stateIcon" aria-hidden="true">!</span>
+      <h1>Account setup required</h1>
+      <p>Your sign-in is valid, but this Clerk account has not been linked to a Herrera employee and organization.</p>
+    </main>
   );
 }
 
