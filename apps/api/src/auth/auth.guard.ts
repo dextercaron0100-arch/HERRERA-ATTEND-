@@ -108,11 +108,12 @@ export class AuthGuard implements CanActivate {
       ?? this.nestedClaim(payload, 'public_metadata', 'email');
     if (!email) throw new UnauthorizedException('The identity token does not include an email address');
 
-    const matches = await this.db.employee.findMany({
-      where: { active: true, email: { equals: email.trim(), mode: 'insensitive' } },
-      select: { id: true, organizationId: true, role: true },
-      take: 2,
+    const normalizedEmail = email.trim().toLowerCase();
+    const employees = await this.db.employee.findMany({
+      where: { active: true },
+      select: { id: true, organizationId: true, role: true, email: true },
     });
+    const matches = employees.filter(employee => employee.email.trim().toLowerCase() === normalizedEmail);
     if (matches.length === 0) {
       throw new UnauthorizedException('No active Herrera employee uses this email address');
     }
