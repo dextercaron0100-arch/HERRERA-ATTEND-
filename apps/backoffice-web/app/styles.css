@@ -173,12 +173,12 @@ tbody tr:hover .pill,tbody tr:hover .healthTag { transform:translateY(-1px);box-
 @media (prefers-reduced-motion:reduce) { .notificationPanel { animation:none; } }
 
 /* Branded authentication */
-.loginPage { position:relative;min-height:100dvh;display:grid;place-items:center;overflow:hidden;padding:34px;background:#edf3fb;isolation:isolate; }
+.loginPage { position:relative;width:100%;max-width:none;min-height:100dvh;margin:0;display:grid;place-items:center;overflow:auto;padding:34px;background:#edf3fb;isolation:isolate; }
 .loginPage:before { content:"";position:absolute;inset:0;z-index:-3;background:linear-gradient(135deg,#f7faff 0%,#edf4ff 52%,#fff9e9 100%); }
 .loginGlow { position:absolute;z-index:-2;border-radius:50%;filter:blur(2px);pointer-events:none;animation:login-float 9s ease-in-out infinite alternate; }
 .loginGlowOne { width:440px;height:440px;top:-210px;right:-100px;background:#ffc40020; }
 .loginGlowTwo { width:500px;height:500px;bottom:-270px;left:-180px;background:#075bd817;animation-delay:-3s; }
-.loginShell { width:min(1120px,100%);min-height:680px;display:grid;grid-template-columns:minmax(0,1.04fr) minmax(430px,.96fr);overflow:hidden;border:1px solid #d9e4f2;border-radius:28px;background:#fff;box-shadow:0 30px 90px #09275a1f,0 3px 12px #09275a0d;animation:login-shell-in .65s cubic-bezier(.22,1,.36,1) both; }
+.loginShell { width:min(1120px,100%);min-height:min(680px,calc(100dvh - 68px));display:grid;grid-template-columns:minmax(0,1.04fr) minmax(430px,.96fr);overflow:hidden;border:1px solid #d9e4f2;border-radius:28px;background:#fff;box-shadow:0 30px 90px #09275a1f,0 3px 12px #09275a0d;animation:login-shell-in .65s cubic-bezier(.22,1,.36,1) both; }
 .loginStory { position:relative;display:flex;flex-direction:column;overflow:hidden;padding:48px 52px;color:#fff;background:linear-gradient(145deg,#061d42 0%,#073579 61%,#075bd8 100%); }
 .loginStory:before { content:"";position:absolute;width:440px;height:440px;right:-230px;top:-150px;border:1px solid #ffffff24;border-radius:50%;box-shadow:0 0 0 70px #ffffff08,0 0 0 140px #ffffff06; }
 .loginStory:after { content:"";position:absolute;width:200px;height:200px;left:-100px;bottom:-85px;border-radius:50%;background:var(--accent-yellow);opacity:.92; }
