@@ -1,0 +1,2 @@
+import { renderPayslip } from './payslip';
+it('renders a valid PDF payslip',async()=>{const pdf=await renderPayslip({company:'Herrera Demo',employee:'Maria Santos',employeeNumber:'EMP-001',period:'1-15 July 2026',currency:'PHP',lines:[{description:'Basic pay',category:'EARNING',amount:'10000.00'}],gross:'10000.00',deductions:'0.00',net:'10000.00'});expect(pdf.subarray(0,4).toString()).toBe('%PDF');expect(pdf.length).toBeGreaterThan(1000);});

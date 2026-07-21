@@ -1,0 +1,599 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  SUPERVISOR
+  HR
+  PAYROLL
+  FINANCE
+  ADMIN
+  AUDITOR
+}
+
+enum AttendanceKind {
+  CLOCK_IN
+  BREAK_START
+  BREAK_END
+  CLOCK_OUT
+}
+
+enum AttendanceDecision {
+  ACCEPTED
+  REJECTED
+  REVIEW
+}
+
+enum PayrollStatus {
+  DRAFT
+  CALCULATED
+  APPROVED
+  LOCKED
+}
+
+enum PayrollPolicyStatus {
+  DRAFT
+  APPROVED
+  RETIRED
+}
+
+enum PayrollLineCategory {
+  EARNING
+  DEDUCTION
+  EMPLOYER_CONTRIBUTION
+}
+
+enum ExceptionType {
+  MISSING_PUNCH
+  EXCESSIVE_DURATION
+  LEAVE_CONFLICT
+  LOCATION_REVIEW
+}
+
+enum ExceptionStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum RequestType {
+  LEAVE
+  OVERTIME
+  ATTENDANCE_CORRECTION
+  REMOTE_WORK
+  FIELD_ASSIGNMENT
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ReportType {
+  DAILY_ATTENDANCE
+  TIMECARD
+  EXCEPTIONS
+  OVERTIME
+  PAYROLL_REGISTER
+  PAYROLL_SUMMARY
+  PAYROLL_VARIANCE
+  DEDUCTIONS
+  AUDIT_LOG
+}
+
+enum ExportFormat {
+  CSV
+  PDF
+}
+
+enum PilotStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  HALTED
+}
+
+enum PilotCycleStatus {
+  OPEN
+  RECONCILED
+  SIGNED_OFF
+}
+
+model Organization {
+  id               String           @id @default(uuid())
+  name             String
+  employees        Employee[]
+  worksites        Worksite[]
+  payrollRuns      PayrollRun[]
+  departments      Department[]
+  schedules        Schedule[]
+  holidays         Holiday[]
+  requests         Request[]
+  approvalPolicies ApprovalPolicy[]
+  payrollPolicies  PayrollPolicy[]
+  reportExports    ReportExport[]
+  pilots           Pilot[]
+  createdAt        DateTime         @default(now())
+}
+
+model Employee {
+  id                   String                   @id @default(uuid())
+  organizationId       String
+  organization         Organization             @relation(fields: [organizationId], references: [id])
+  employeeNumber       String
+  name                 String
+  email                String
+  role                 Role                     @default(EMPLOYEE)
+  active               Boolean                  @default(true)
+  worksiteId           String?
+  worksite             Worksite?                @relation(fields: [worksiteId], references: [id])
+  departmentId         String?
+  department           Department?              @relation(fields: [departmentId], references: [id])
+  scheduleId           String?
+  schedule             Schedule?                @relation(fields: [scheduleId], references: [id])
+  attendanceEvents     AttendanceEvent[]
+  dailySummaries       DailyAttendanceSummary[]
+  attendanceExceptions AttendanceException[]
+  payrollItems         PayrollLineItem[]
+  requests             Request[]                @relation("RequestOwner")
+  approvalSteps        ApprovalStep[]           @relation("StepApprover")
+  delegatedSteps       ApprovalStep[]           @relation("StepDelegate")
+  requestComments      RequestComment[]
+  notifications        Notification[]
+  compensationProfiles CompensationProfile[]
+  createdPayrollRuns   PayrollRun[]             @relation("PayrollRunCreator")
+  approvedPayrollRuns  PayrollRun[]             @relation("PayrollRunApprover")
+  payrollAdjustments   PayrollAdjustment[]
+  pilotMemberships     PilotMember[]
+  pilotReferenceLines  PilotReferenceLine[]
+  devices              RegisteredDevice[]
+
+  @@unique([organizationId, employeeNumber])
+  @@unique([organizationId, email])
+}
+
+model RegisteredDevice {
+  id                String   @id @default(uuid())
+  employeeId        String
+  employee          Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  deviceId          String   @unique
+  name              String
+  platform          String
+  biometricsEnabled Boolean  @default(false)
+  active            Boolean  @default(true)
+  registeredAt      DateTime @default(now())
+  lastSeenAt        DateTime @default(now())
+
+  @@index([employeeId, active])
+}
+
+model Department {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  employees      Employee[]
+
+  @@unique([organizationId, name])
+}
+
+model Schedule {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  timezone       String       @default("Asia/Manila")
+  shifts         Shift[]
+  employees      Employee[]
+
+  @@unique([organizationId, name])
+}
+
+model Shift {
+  id           String   @id @default(uuid())
+  scheduleId   String
+  schedule     Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int
+  startMinute  Int
+  endMinute    Int
+  breakMinutes Int      @default(60)
+  graceMinutes Int      @default(0)
+
+  @@unique([scheduleId, dayOfWeek])
+}
+
+model Holiday {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  date           DateTime     @db.Date
+  name           String
+  category       String
+
+  @@unique([organizationId, date, category])
+}
+
+model Worksite {
+  id                String            @id @default(uuid())
+  organizationId    String
+  organization      Organization      @relation(fields: [organizationId], references: [id])
+  name              String
+  latitude          Decimal           @db.Decimal(10, 7)
+  longitude         Decimal           @db.Decimal(10, 7)
+  radiusMeters      Int               @default(100)
+  maxAccuracyMeters Int               @default(50)
+  employees         Employee[]
+  events            AttendanceEvent[]
+}
+
+model AttendanceEvent {
+  id             String             @id @default(uuid())
+  employeeId     String
+  employee       Employee           @relation(fields: [employeeId], references: [id])
+  worksiteId     String?
+  worksite       Worksite?          @relation(fields: [worksiteId], references: [id])
+  kind           AttendanceKind
+  capturedAt     DateTime
+  receivedAt     DateTime           @default(now())
+  latitude       Decimal            @db.Decimal(10, 7)
+  longitude      Decimal            @db.Decimal(10, 7)
+  accuracyMeters Decimal            @db.Decimal(8, 2)
+  distanceMeters Decimal?           @db.Decimal(10, 2)
+  decision       AttendanceDecision
+  reasonCodes    String[]
+  idempotencyKey String             @unique
+  deviceId       String
+  correctionOfId String?
+  correctionOf   AttendanceEvent?   @relation("Corrections", fields: [correctionOfId], references: [id])
+  corrections    AttendanceEvent[]  @relation("Corrections")
+
+  @@index([employeeId, capturedAt])
+}
+
+model DailyAttendanceSummary {
+  id               String                @id @default(uuid())
+  employeeId       String
+  employee         Employee              @relation(fields: [employeeId], references: [id])
+  localDate        DateTime              @db.Date
+  firstClockIn     DateTime?
+  lastClockOut     DateTime?
+  workedMinutes    Int                   @default(0)
+  breakMinutes     Int                   @default(0)
+  lateMinutes      Int                   @default(0)
+  undertimeMinutes Int                   @default(0)
+  sourceEventIds   String[]
+  calculatedAt     DateTime              @default(now())
+  exceptions       AttendanceException[]
+
+  @@unique([employeeId, localDate])
+}
+
+model AttendanceException {
+  id           String                  @id @default(uuid())
+  employeeId   String
+  employee     Employee                @relation(fields: [employeeId], references: [id])
+  summaryId    String?
+  summary      DailyAttendanceSummary? @relation(fields: [summaryId], references: [id])
+  type         ExceptionType
+  status       ExceptionStatus         @default(OPEN)
+  reason       String
+  evidence     Json
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime                @default(now())
+
+  @@index([employeeId, status, createdAt])
+}
+
+model ApprovalPolicy {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  requestType    RequestType
+  name           String
+  steps          Json
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, requestType, name])
+}
+
+model Request {
+  id             String           @id @default(uuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  employeeId     String
+  employee       Employee         @relation("RequestOwner", fields: [employeeId], references: [id])
+  type           RequestType
+  status         RequestStatus    @default(PENDING)
+  startsAt       DateTime
+  endsAt         DateTime
+  reason         String
+  evidence       Json
+  currentStep    Int              @default(1)
+  submittedAt    DateTime         @default(now())
+  decidedAt      DateTime?
+  steps          ApprovalStep[]
+  comments       RequestComment[]
+
+  @@index([organizationId, status, submittedAt])
+  @@index([employeeId, submittedAt])
+}
+
+model ApprovalStep {
+  id            String           @id @default(uuid())
+  requestId     String
+  request       Request          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sequence      Int
+  approverRole  Role
+  approverId    String?
+  approver      Employee?        @relation("StepApprover", fields: [approverId], references: [id])
+  delegatedToId String?
+  delegatedTo   Employee?        @relation("StepDelegate", fields: [delegatedToId], references: [id])
+  decision      ApprovalDecision @default(PENDING)
+  comment       String?
+  decidedAt     DateTime?
+
+  @@unique([requestId, sequence])
+  @@index([approverId, decision])
+  @@index([delegatedToId, decision])
+}
+
+model RequestComment {
+  id        String   @id @default(uuid())
+  requestId String
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Employee @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([requestId, createdAt])
+}
+
+model Notification {
+  id         String    @id @default(uuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  type       String
+  title      String
+  body       String
+  metadata   Json
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([employeeId, readAt, createdAt])
+}
+
+model PayrollPolicy {
+  id             String              @id @default(uuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  name           String
+  version        Int
+  status         PayrollPolicyStatus @default(DRAFT)
+  effectiveFrom  DateTime
+  currency       String              @default("PHP")
+  rules          Json
+  createdById    String
+  approvedById   String?
+  approvedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  payrollRuns    PayrollRun[]
+
+  @@unique([organizationId, name, version])
+}
+
+model CompensationProfile {
+  id            String    @id @default(uuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  currency      String    @default("PHP")
+  monthlyBase   Decimal   @db.Decimal(14, 2)
+  hourlyRate    Decimal?  @db.Decimal(14, 4)
+  allowances    Json
+  deductions    Json
+  createdAt     DateTime  @default(now())
+
+  @@unique([employeeId, effectiveFrom])
+  @@index([employeeId, effectiveTo])
+}
+
+model PayrollRun {
+  id              String              @id @default(uuid())
+  organizationId  String
+  organization    Organization        @relation(fields: [organizationId], references: [id])
+  periodStart     DateTime
+  periodEnd       DateTime
+  status          PayrollStatus       @default(DRAFT)
+  policyVersion   Int
+  policyId        String?
+  policy          PayrollPolicy?      @relation(fields: [policyId], references: [id])
+  inputSnapshot   Json
+  calculationHash String?
+  createdById     String?
+  createdBy       Employee?           @relation("PayrollRunCreator", fields: [createdById], references: [id])
+  approvedById    String?
+  approvedBy      Employee?           @relation("PayrollRunApprover", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  lockedAt        DateTime?
+  reopenedAt      DateTime?
+  reopenReason    String?
+  revision        Int                 @default(1)
+  items           PayrollLineItem[]
+  adjustments     PayrollAdjustment[]
+  history         PayrollRunHistory[]
+  payslips        Payslip[]
+  pilotCycle      PilotCycle?
+  createdAt       DateTime            @default(now())
+}
+
+model PayrollLineItem {
+  id           String              @id @default(uuid())
+  payrollRunId String
+  payrollRun   PayrollRun          @relation(fields: [payrollRunId], references: [id])
+  employeeId   String
+  employee     Employee            @relation(fields: [employeeId], references: [id])
+  code         String
+  description  String
+  category     PayrollLineCategory @default(EARNING)
+  amount       Decimal             @db.Decimal(14, 2)
+  taxable      Boolean             @default(false)
+  explanation  Json
+
+  @@index([payrollRunId, employeeId])
+}
+
+model PayrollAdjustment {
+  id           String     @id @default(uuid())
+  payrollRunId String
+  payrollRun   PayrollRun @relation(fields: [payrollRunId], references: [id])
+  employeeId   String
+  employee     Employee   @relation(fields: [employeeId], references: [id])
+  createdById  String
+  code         String
+  description  String
+  amount       Decimal    @db.Decimal(14, 2)
+  reason       String
+  createdAt    DateTime   @default(now())
+
+  @@index([payrollRunId, employeeId])
+}
+
+model PayrollRunHistory {
+  id           String        @id @default(uuid())
+  payrollRunId String
+  payrollRun   PayrollRun    @relation(fields: [payrollRunId], references: [id])
+  actorId      String
+  action       String
+  fromStatus   PayrollStatus
+  toStatus     PayrollStatus
+  reason       String?
+  revision     Int
+  occurredAt   DateTime      @default(now())
+
+  @@index([payrollRunId, occurredAt])
+}
+
+model Payslip {
+  id           String     @id @default(uuid())
+  payrollRunId String
+  payrollRun   PayrollRun @relation(fields: [payrollRunId], references: [id])
+  employeeId   String
+  storageKey   String
+  contentHash  String
+  generatedAt  DateTime   @default(now())
+
+  @@unique([payrollRunId, employeeId])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorId        String
+  action         String
+  entityType     String
+  entityId       String
+  metadata       Json
+  occurredAt     DateTime @default(now())
+
+  @@index([organizationId, occurredAt])
+}
+
+model ReportExport {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  requestedById  String
+  reportType     ReportType
+  format         ExportFormat
+  filters        Json
+  rowCount       Int
+  contentHash    String
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([requestedById, createdAt])
+}
+
+model Pilot {
+  id             String      @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  worksiteId     String?
+  name           String
+  status         PilotStatus @default(PLANNED)
+  tolerance      Decimal     @default(0) @db.Decimal(14, 2)
+  targetCycles   Int         @default(2)
+  startsAt       DateTime
+  endsAt         DateTime?
+  createdById    String
+  members        PilotMember[]
+  cycles         PilotCycle[]
+  createdAt      DateTime    @default(now())
+
+  @@index([organizationId, status])
+}
+
+model PilotMember {
+  id         String   @id @default(uuid())
+  pilotId    String
+  pilot      Pilot    @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  enrolledAt DateTime @default(now())
+
+  @@unique([pilotId, employeeId])
+}
+
+model PilotCycle {
+  id             String           @id @default(uuid())
+  pilotId        String
+  pilot          Pilot            @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+  payrollRunId   String           @unique
+  payrollRun     PayrollRun       @relation(fields: [payrollRunId], references: [id])
+  cycleNumber    Int
+  status         PilotCycleStatus @default(OPEN)
+  reconciledAt   DateTime?
+  signedOffAt    DateTime?
+  signedOffById  String?
+  notes          String?
+  referenceLines PilotReferenceLine[]
+  createdAt      DateTime         @default(now())
+
+  @@unique([pilotId, cycleNumber])
+}
+
+model PilotReferenceLine {
+  id            String     @id @default(uuid())
+  pilotCycleId  String
+  pilotCycle    PilotCycle @relation(fields: [pilotCycleId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      Employee   @relation(fields: [employeeId], references: [id])
+  code          String
+  trustedAmount Decimal    @db.Decimal(14, 2)
+  systemAmount  Decimal    @db.Decimal(14, 2)
+  variance      Decimal    @db.Decimal(14, 2)
+  explanation   String?
+  resolved      Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+
+  @@unique([pilotCycleId, employeeId, code])
+  @@index([pilotCycleId, resolved])
+}
