@@ -59,8 +59,10 @@ export class AuthGuard implements CanActivate {
     try {
       ({ payload } = await jwtVerify(header.slice(7), this.jwks, {
         issuer: process.env.JWT_ISSUER,
-        ...(process.env.JWT_AUDIENCE ? { audience: process.env.JWT_AUDIENCE } : {}),
       }));
+      if (process.env.JWT_AUDIENCE && payload.aud && !this.matchesAudience(payload.aud, process.env.JWT_AUDIENCE)) {
+        throw new Error('Unexpected token audience');
+      }
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
@@ -127,6 +129,10 @@ export class AuthGuard implements CanActivate {
     };
     this.identityCache.set(identity.subject, { identity: resolved, expiresAt: Date.now() + 5 * 60 * 1000 });
     return resolved;
+  }
+
+  private matchesAudience(actual: string | string[], expected: string) {
+    return Array.isArray(actual) ? actual.includes(expected) : actual === expected;
   }
 
   private claim(payload: JWTPayload, name: string): string | undefined {
