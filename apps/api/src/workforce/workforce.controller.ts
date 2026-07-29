@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { IsBoolean, IsEmail, IsEnum, IsInt, IsLatitude, IsLongitude, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PrismaService } from '../prisma.service';
@@ -17,8 +17,16 @@ class EmployeeDto {
 }
 class EmployeeStatusDto { @IsBoolean() active!: boolean; }
 class WorksiteDto { @IsUUID() organizationId!:string; @IsString() name!:string; @IsLatitude() latitude!:number; @IsLongitude() longitude!:number; @IsInt() @IsPositive() @Max(5000) radiusMeters!:number; @IsInt() @Min(1) @Max(1000) maxAccuracyMeters!:number; }
+
 @Controller('workforce') export class WorkforceController {
   constructor(private readonly db:PrismaService){}
+  @Get('session') async session(@Req() request:AuthenticatedRequest){
+    const identity=request.user;
+    if(!identity?.employeeId||!identity.organizationId) throw new UnauthorizedException('Employee identity is unavailable');
+    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true}});
+    if(!employee) throw new NotFoundException('Active employee record not found');
+    return {employee};
+  }
   @Get('employees') employees(@Query('organizationId') organizationId:string, @Query('status') status?:string){return this.db.employee.findMany({where:{organizationId,...(status === 'all' ? {} : {active:true})},include:{worksite:true,department:true,schedule:true,devices:{where:{active:true},select:{id:true}}},orderBy:{name:'asc'}});}
   @Post('employees') async createEmployee(@Body() dto:EmployeeDto, @Req() request:AuthenticatedRequest){
     this.requirePeopleAdmin(request.user);

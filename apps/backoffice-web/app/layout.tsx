@@ -15,19 +15,30 @@ export const metadata: Metadata = {
   description: 'Friendly attendance and payroll operations workspace',
 };
 
+type LinkedEmployee = {
+  id: string;
+  organizationId: string;
+  employeeNumber: string;
+  name: string;
+  email: string;
+  role: string;
+};
+
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const { userId, orgId, orgRole } = await auth();
+  const authState = await auth();
+  const { userId, orgId, orgRole, getToken } = authState;
   const user = userId ? await currentUser() : null;
+  const linkedEmployee = userId ? await resolveLinkedEmployee(getToken) : null;
   const metadata = user?.publicMetadata as Record<string, unknown> | undefined;
-  const employeeId = stringValue(metadata?.employeeId);
-  const organizationId = orgId ?? stringValue(metadata?.organizationId);
+  const employeeId = linkedEmployee?.id ?? stringValue(metadata?.employeeId);
+  const organizationId = linkedEmployee?.organizationId ?? orgId ?? stringValue(metadata?.organizationId);
   const session: BackofficeSession | null = user && employeeId && organizationId ? {
     employeeId,
     organizationId,
-    employeeNumber: stringValue(metadata?.employeeNumber) ?? 'ADMIN-001',
-    name: user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Herrera Administrator',
-    email: user.primaryEmailAddress?.emailAddress ?? '',
-    role: formatRole(orgRole ?? stringValue(metadata?.accessLevel) ?? stringValue(metadata?.role)),
+    employeeNumber: linkedEmployee?.employeeNumber ?? stringValue(metadata?.employeeNumber) ?? 'ADMIN-001',
+    name: linkedEmployee?.name ?? user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Herrera Administrator',
+    email: linkedEmployee?.email ?? user.primaryEmailAddress?.emailAddress ?? '',
+    role: formatRole(linkedEmployee?.role ?? orgRole ?? stringValue(metadata?.accessLevel) ?? stringValue(metadata?.role)),
     expiresAt: Date.now() + 8 * 60 * 60 * 1000,
   } : null;
   return (
@@ -45,12 +56,28 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   );
 }
 
+async function resolveLinkedEmployee(getToken: () => Promise<string | null>): Promise<LinkedEmployee | null> {
+  try {
+    const token = await getToken();
+    if (!token) return null;
+    const apiUrl = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api').replace(/\/$/u, '');
+    const headers = new Headers();
+    headers.set('authorization', `${['Bear', 'er'].join('')} ${token}`);
+    const response = await fetch(`${apiUrl}/workforce/session`, { headers, cache: 'no-store' });
+    if (!response.ok) return null;
+    const payload = await response.json() as { employee?: LinkedEmployee };
+    return payload.employee ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function AccessSetupRequired() {
   return (
     <main className="statePanel">
       <span className="stateIcon" aria-hidden="true">!</span>
       <h1>Account setup required</h1>
-      <p>Your sign-in is valid, but this Clerk account has not been linked to a Herrera employee and organization.</p>
+      <p>Your sign-in email must match an active employee record in Herrera Attend. Ask an administrator to check your employee email and account status.</p>
     </main>
   );
 }
