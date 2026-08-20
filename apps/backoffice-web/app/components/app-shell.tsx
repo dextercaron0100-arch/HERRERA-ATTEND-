@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   FileChartColumn,
   HelpCircle,
+  KeyRound,
   Menu,
   PhilippinePeso,
   ShieldAlert,
@@ -19,13 +20,17 @@ import {
   WalletCards,
   SlidersHorizontal,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { apiRequest, appConfig } from '../lib/api';
 import { NotificationCenter } from './notification-center';
 import { LogoutButton } from './logout-button';
 import { useSession } from './session-provider';
 
-const navigation = [
+type NavigationItem = { label: string; href: string; icon: LucideIcon; roles?: string[] };
+type NavigationGroup = { label: string; items: NavigationItem[] };
+
+const navigation: NavigationGroup[] = [
   {
     label: 'Workforce',
     items: [
@@ -48,19 +53,26 @@ const navigation = [
   },
   {
     label: 'System',
-    items: [{ label: 'Pilot control', href: '/pilot', icon: TestTubeDiagonal }],
+    items: [
+      { label: 'Pilot control', href: '/pilot', icon: TestTubeDiagonal },
+      { label: 'Account security', href: '/account/security', icon: KeyRound, roles: ['HR', 'ADMIN', 'SUPER_ADMIN'] },
+    ],
   },
-] as const;
+];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const session = useSession();
+  const normalizedRole = session.role.replaceAll(' ', '_').toUpperCase();
+  const visibleNavigation = navigation
+    .map(group => ({ ...group, items: group.items.filter(item => !item.roles || item.roles.includes(normalizedRole)) }))
+    .filter(group => group.items.length > 0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navCounts, setNavCounts] = useState<Record<string, number>>({});
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const currentPageLabel = (() => {
-    for (const group of navigation) {
+    for (const group of visibleNavigation) {
       for (const item of group.items) {
         const isCurrent = item.href === '/'
           ? pathname === '/'
@@ -148,7 +160,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
         <nav className="primaryNav" aria-label="Primary navigation">
-          {navigation.map((group) => (
+          {visibleNavigation.map((group) => (
             <div className="navGroup" key={group.label}>
               <p className="navLabel">{group.label}</p>
               {group.items.map(({ label, href, icon: Icon }) => {
