@@ -26,3 +26,7 @@ export function useSession() {
   if (!session) throw new Error('useSession must be used within an authenticated SessionProvider');
   return session;
 }
+
+export function useOptionalSession() {
+  return useContext(SessionContext);
+}
