@@ -3,7 +3,9 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { AppShell } from './components/app-shell';
-import { SessionProvider } from './components/session-provider';
+import { SessionProvider, DevSessionProvider } from './components/session-provider';
+import { isClerkConfigured } from './lib/auth-mode';
+import { getSession } from './lib/session';
 import type { BackofficeSession } from './lib/session';
 import './styles.css';
 
@@ -25,6 +27,19 @@ type LinkedEmployee = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  if (!isClerkConfigured) {
+    const session = await getSession();
+    return (
+      <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
+        <body>
+          {session
+            ? <DevSessionProvider session={session}><AppShell>{children}</AppShell></DevSessionProvider>
+            : children}
+        </body>
+      </html>
+    );
+  }
+
   const authState = await auth();
   const { userId, orgId, orgRole, getToken } = authState;
   const user = userId ? await currentUser() : null;

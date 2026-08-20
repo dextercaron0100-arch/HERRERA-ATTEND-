@@ -105,7 +105,8 @@ export class AuthGuard implements CanActivate {
 
     const email = this.claim(payload, 'email')
       ?? this.claim(payload, 'primary_email')
-      ?? this.nestedClaim(payload, 'public_metadata', 'email');
+      ?? this.nestedClaim(payload, 'public_metadata', 'email')
+      ?? await this.fetchClerkEmail(identity.subject);
     if (!email) throw new UnauthorizedException('The identity token does not include an email address');
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -130,6 +131,27 @@ export class AuthGuard implements CanActivate {
     };
     this.identityCache.set(identity.subject, { identity: resolved, expiresAt: Date.now() + 5 * 60 * 1000 });
     return resolved;
+  }
+
+  private async fetchClerkEmail(subject: string): Promise<string | undefined> {
+    const secretKey = process.env.CLERK_SECRET_KEY;
+    if (!secretKey) return undefined;
+    try {
+      const response = await fetch(`https://api.clerk.com/v1/users/${subject}`, {
+        headers: { Authorization: `Bearer ${secretKey}` },
+      });
+      if (!response.ok) return undefined;
+      const user = (await response.json()) as {
+        primary_email_address_id?: string;
+        email_addresses?: { id: string; email_address: string }[];
+      };
+      const primary = user.email_addresses?.find(
+        entry => entry.id === user.primary_email_address_id,
+      );
+      return primary?.email_address ?? user.email_addresses?.[0]?.email_address;
+    } catch {
+      return undefined;
+    }
   }
 
   private matchesAudience(actual: string | string[], expected: string) {

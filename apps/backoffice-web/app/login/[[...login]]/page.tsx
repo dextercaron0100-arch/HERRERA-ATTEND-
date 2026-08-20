@@ -1,5 +1,7 @@
 import { SignIn } from '@clerk/nextjs';
 import { CalendarCheck, CheckCircle2, LockKeyhole, MapPinCheck, ShieldCheck } from 'lucide-react';
+import { isClerkConfigured } from '../../lib/auth-mode';
+import { DevLoginForm } from '../../components/dev-login-form';
 
 const benefits = [
   { icon: MapPinCheck, title: 'Verified attendance', detail: 'Review location-backed time records with confidence.' },
@@ -51,34 +53,38 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <SignIn
-            routing="path"
-            path="/login"
-            forceRedirectUrl="/"
-            withSignUp={false}
-            appearance={{
-              variables: {
-                colorPrimary: '#075bd8',
-                borderRadius: '12px',
-                fontFamily: 'var(--font-geist), ui-sans-serif, system-ui, sans-serif',
-              },
-              elements: {
-                rootBox: 'herreraClerkRoot',
-                cardBox: 'herreraClerkCardBox',
-                card: 'herreraClerkCard',
-                header: 'herreraClerkHeader',
-                socialButtonsBlockButton: 'herreraClerkSocialButton',
-                socialButtonsBlockButtonText: 'herreraClerkSocialText',
-                dividerLine: 'herreraClerkDivider',
-                dividerText: 'herreraClerkDividerText',
-                formFieldLabel: 'herreraClerkLabel',
-                formFieldInput: 'herreraClerkInput',
-                formButtonPrimary: 'herreraClerkButton',
-                footer: 'herreraClerkFooter',
-                identityPreview: 'herreraClerkIdentity',
-              },
-            }}
-          />
+          {isClerkConfigured ? (
+            <SignIn
+              routing="path"
+              path="/login"
+              forceRedirectUrl="/"
+              withSignUp={false}
+              appearance={{
+                variables: {
+                  colorPrimary: '#075bd8',
+                  borderRadius: '12px',
+                  fontFamily: 'var(--font-geist), ui-sans-serif, system-ui, sans-serif',
+                },
+                elements: {
+                  rootBox: 'herreraClerkRoot',
+                  cardBox: 'herreraClerkCardBox',
+                  card: 'herreraClerkCard',
+                  header: 'herreraClerkHeader',
+                  socialButtonsBlockButton: 'herreraClerkSocialButton',
+                  socialButtonsBlockButtonText: 'herreraClerkSocialText',
+                  dividerLine: 'herreraClerkDivider',
+                  dividerText: 'herreraClerkDividerText',
+                  formFieldLabel: 'herreraClerkLabel',
+                  formFieldInput: 'herreraClerkInput',
+                  formButtonPrimary: 'herreraClerkButton',
+                  footer: 'herreraClerkFooter',
+                  identityPreview: 'herreraClerkIdentity',
+                },
+              }}
+            />
+          ) : (
+            <DevLoginForm />
+          )}
 
           <div className="loginHelp">
             <ShieldCheck size={16} />
