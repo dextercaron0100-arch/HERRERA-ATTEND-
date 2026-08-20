@@ -1,6 +1,6 @@
 import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { Role } from '@prisma/client';
-import { IsBoolean, IsEmail, IsEnum, IsInt, IsLatitude, IsLongitude, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsInt, IsLatitude, IsLongitude, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { PrismaService } from '../prisma.service';
 import type { GeoAttendIdentity } from '../auth/auth.guard';
 import { decideMobileLogin, distanceMeters } from '../attendance/geofence';
@@ -17,6 +17,7 @@ class EmployeeDto {
   @IsOptional() @IsUUID() scheduleId?: string;
 }
 class EmployeeStatusDto { @IsBoolean() active!: boolean; }
+class EmployeeWorksiteDto { @ValidateIf((_object,value)=>value!==null) @IsUUID() worksiteId!: string | null; }
 class WorksiteDto { @IsUUID() organizationId!:string; @IsString() @MinLength(2) @MaxLength(120) name!:string; @IsLatitude() latitude!:number; @IsLongitude() longitude!:number; @IsInt() @IsPositive() @Max(5000) radiusMeters!:number; @IsInt() @Min(1) @Max(1000) maxAccuracyMeters!:number; }
 class MobileLoginLocationDto { @IsLatitude() latitude!:number; @IsLongitude() longitude!:number; @IsNumber() @Min(0) @Max(10000) accuracyMeters!:number; }
 
@@ -62,6 +63,21 @@ class MobileLoginLocationDto { @IsLatitude() latitude!:number; @IsLongitude() lo
     return this.db.$transaction(async transaction => {
       const updated = await transaction.employee.update({where:{id},data:{active:dto.active}});
       await transaction.auditLog.create({data:{organizationId:employee.organizationId,actorId:request.user?.employeeId ?? request.user?.subject ?? 'system',action:dto.active ? 'EMPLOYEE_ACTIVATED' : 'EMPLOYEE_SUSPENDED',entityType:'Employee',entityId:id,metadata:{employeeNumber:employee.employeeNumber}}});
+      return updated;
+    });
+  }
+  @Patch('employees/:id/worksite') async updateEmployeeWorksite(@Param('id') id:string, @Body() dto:EmployeeWorksiteDto, @Req() request:AuthenticatedRequest){
+    this.requirePeopleAdmin(request.user);
+    const employee=await this.db.employee.findUnique({where:{id}});
+    if(!employee) throw new NotFoundException('Employee not found');
+    if(request.user?.organizationId&&request.user.organizationId!==employee.organizationId) throw new ForbiddenException('Cross-organization access denied');
+    if(dto.worksiteId){
+      const worksite=await this.db.worksite.findFirst({where:{id:dto.worksiteId,organizationId:employee.organizationId}});
+      if(!worksite) throw new NotFoundException('Worksite not found in this organization');
+    }
+    return this.db.$transaction(async transaction=>{
+      const updated=await transaction.employee.update({where:{id},data:{worksiteId:dto.worksiteId??null},include:{worksite:true,department:true,schedule:true,devices:{where:{active:true},select:{id:true}}}});
+      await transaction.auditLog.create({data:{organizationId:employee.organizationId,actorId:request.user?.employeeId??request.user?.subject??'system',action:'EMPLOYEE_WORKSITE_UPDATED',entityType:'Employee',entityId:id,metadata:{employeeNumber:employee.employeeNumber,previousWorksiteId:employee.worksiteId,worksiteId:dto.worksiteId??null}}});
       return updated;
     });
   }
