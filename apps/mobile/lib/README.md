@@ -23,3 +23,7 @@ Use package imports (`package:geoattend_employee/...`) across folders. Keep
 feature-specific widgets inside their feature, shared infrastructure under
 `core`, and server communication under `data/clients`.
 
+Authentication is provided by Supabase. Supply `API_URL`, `SUPABASE_URL`, and
+`SUPABASE_PUBLISHABLE_KEY` with `--dart-define` when running or building the
+application. Supabase sessions are persisted with `flutter_secure_storage`.
+

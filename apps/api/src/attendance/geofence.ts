@@ -13,3 +13,9 @@ export function decideAttendance(distance:number, radius:number, accuracy:number
   if (distance > radius) return { decision:'REJECTED' as const, reasonCodes:reasons };
   return { decision:'ACCEPTED' as const, reasonCodes:['WITHIN_GEOFENCE'] };
 }
+
+export function decideMobileLogin(distance:number, radius:number, accuracy:number, maxAccuracy:number){
+  if (accuracy > maxAccuracy) return { allowed:false as const, reasonCode:'LOW_GPS_ACCURACY' as const };
+  if (distance > radius) return { allowed:false as const, reasonCode:'OUTSIDE_GEOFENCE' as const };
+  return { allowed:true as const, reasonCode:'WITHIN_GEOFENCE' as const };
+}

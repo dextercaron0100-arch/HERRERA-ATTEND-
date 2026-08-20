@@ -1,28 +1,23 @@
 'use client';
 
-import { useAuth } from '@clerk/nextjs';
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import type { BackofficeSession } from '../lib/session';
 import { setApiTokenProvider } from '../lib/api';
+import { createClient } from '../lib/supabase/client';
 
 const SessionContext = createContext<BackofficeSession | null>(null);
 
 export function SessionProvider({ session, children }: { session: BackofficeSession; children: React.ReactNode }) {
-  const { getToken } = useAuth();
-  useEffect(() => {
-    setApiTokenProvider(() => getToken());
-    return () => setApiTokenProvider(null);
-  }, [getToken]);
-  return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
-}
+  const supabase = useMemo(() => createClient(), []);
 
-// Dev login fallback (no Clerk): the API ignores bearer token contents when
-// AUTH_MODE=development, so any non-empty string satisfies the Authorization header.
-export function DevSessionProvider({ session, children }: { session: BackofficeSession; children: React.ReactNode }) {
   useEffect(() => {
-    setApiTokenProvider(() => Promise.resolve('local-development'));
+    setApiTokenProvider(async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    });
     return () => setApiTokenProvider(null);
-  }, []);
+  }, [supabase]);
+
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }
 

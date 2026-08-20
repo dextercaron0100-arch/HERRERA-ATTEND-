@@ -1,7 +1,5 @@
-import { SignIn } from '@clerk/nextjs';
 import { CalendarCheck, CheckCircle2, LockKeyhole, MapPinCheck, ShieldCheck } from 'lucide-react';
-import { isClerkConfigured } from '../../lib/auth-mode';
-import { DevLoginForm } from '../../components/dev-login-form';
+import { SupabaseLoginForm } from '../../components/supabase-login-form';
 
 const benefits = [
   { icon: MapPinCheck, title: 'Verified attendance', detail: 'Review location-backed time records with confidence.' },
@@ -9,7 +7,8 @@ const benefits = [
   { icon: ShieldCheck, title: 'Protected admin access', detail: 'Secure sessions keep workforce information private.' },
 ];
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   return (
     <main className="loginPage">
       <div className="loginGlow loginGlowOne" />
@@ -53,38 +52,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {isClerkConfigured ? (
-            <SignIn
-              routing="path"
-              path="/login"
-              forceRedirectUrl="/"
-              withSignUp={false}
-              appearance={{
-                variables: {
-                  colorPrimary: '#075bd8',
-                  borderRadius: '12px',
-                  fontFamily: 'var(--font-geist), ui-sans-serif, system-ui, sans-serif',
-                },
-                elements: {
-                  rootBox: 'herreraClerkRoot',
-                  cardBox: 'herreraClerkCardBox',
-                  card: 'herreraClerkCard',
-                  header: 'herreraClerkHeader',
-                  socialButtonsBlockButton: 'herreraClerkSocialButton',
-                  socialButtonsBlockButtonText: 'herreraClerkSocialText',
-                  dividerLine: 'herreraClerkDivider',
-                  dividerText: 'herreraClerkDividerText',
-                  formFieldLabel: 'herreraClerkLabel',
-                  formFieldInput: 'herreraClerkInput',
-                  formButtonPrimary: 'herreraClerkButton',
-                  footer: 'herreraClerkFooter',
-                  identityPreview: 'herreraClerkIdentity',
-                },
-              }}
-            />
-          ) : (
-            <DevLoginForm />
-          )}
+          <SupabaseLoginForm initialError={error} />
 
           <div className="loginHelp">
             <ShieldCheck size={16} />

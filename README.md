@@ -25,7 +25,7 @@ configuration folders.
 
 ## What is implemented
 
-- NestJS API with JWT/JWKS validation, tenant/actor consistency checks, rate limiting, security headers, strict validation, readiness checks, idempotent attendance capture, worksite assignment checks, GPS-accuracy handling, and server-authoritative geofence decisions.
+- NestJS API with Supabase JWT/JWKS validation, stable user-to-employee linking, tenant/actor consistency checks, rate limiting, security headers, strict validation, readiness checks, idempotent attendance capture, worksite assignment checks, GPS-accuracy handling, and server-authoritative geofence decisions.
 - PostgreSQL schema for organizations, employees, worksites, immutable attendance events/corrections, versioned payroll policies, payroll snapshots/line items, locking state, and audit records.
 - Redis/BullMQ worker foundation for attendance summaries and payroll batches.
 - Responsive Next.js HR operations dashboard.
@@ -43,11 +43,20 @@ This is a foundation, not a legally approved payroll release. Statutory rules ar
 
 The seeded payroll policy is explicitly `DEMO_ONLY_NOT_STATUTORY`. Replace it with a payroll-specialist-approved policy and reference cases before any real payroll run.
 
-For the mobile app, pass seeded identifiers and the API endpoint at runtime: `flutter run --dart-define=API_URL=http://10.0.2.2:4000/api --dart-define=EMPLOYEE_ID=<id> --dart-define=WORKSITE_ID=<id>`.
+Create a Supabase project before running the applications. Disable public signups, require email confirmation, and invite users whose email addresses match active seeded or production employee records. Copy the project URL and publishable key into the environment variables shown in `.env.example`. See `docs/SUPABASE_SETUP.md` for the complete Supabase and Railway configuration.
+
+For the mobile app, pass the API and Supabase public configuration at runtime:
+
+```bash
+flutter run \
+  --dart-define=API_URL=http://10.0.2.2:4000/api \
+  --dart-define=SUPABASE_URL=https://your-project-ref.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
+```
 
 ## Run locally
 
-1. Copy `.env.example` to `.env`.
+1. Copy `.env.example` to `.env` and add your Supabase project URL and publishable key.
 2. Start dependencies: `docker compose up -d`.
 3. Install packages: `npm install`.
 4. Generate and migrate: `npm run db:generate` then `npm run db:migrate -- --name initial`.
@@ -69,7 +78,7 @@ Run verification with `npm test` and `npm run build`.
 
 ## Release controls
 
-Before any shared deployment, switch `AUTH_MODE` to `production`, configure the identity-provider values in `.env.example`, follow `docs/SECURITY.md`, and complete `docs/UAT.md`. Backup and recovery procedures are in `docs/OPERATIONS.md`.
+Before any shared deployment, configure Supabase authentication and Railway variables, run the Prisma migration, follow `docs/SECURITY.md`, and complete `docs/UAT.md`. Backup and recovery procedures are in `docs/OPERATIONS.md`.
 
 Before pilot use, add device attestation, a specialist-approved payroll rulebook/reference suite, protected object storage for payslips, centralized audit middleware, and generated API clients.
 

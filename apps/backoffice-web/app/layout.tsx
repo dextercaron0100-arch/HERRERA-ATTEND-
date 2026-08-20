@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
-import { ClerkProvider } from '@clerk/nextjs';
-import { auth, currentUser } from '@clerk/nextjs/server';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { AppShell } from './components/app-shell';
-import { SessionProvider, DevSessionProvider } from './components/session-provider';
-import { isClerkConfigured } from './lib/auth-mode';
-import { getSession } from './lib/session';
+import { SessionProvider } from './components/session-provider';
+import { LogoutButton } from './components/logout-button';
+import { createClient } from './lib/supabase/server';
 import type { BackofficeSession } from './lib/session';
+import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });
@@ -26,62 +25,69 @@ type LinkedEmployee = {
   role: string;
 };
 
-export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  if (!isClerkConfigured) {
-    const session = await getSession();
-    return (
-      <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
-        <body>
-          {session
-            ? <DevSessionProvider session={session}><AppShell>{children}</AppShell></DevSessionProvider>
-            : children}
-        </body>
-      </html>
-    );
-  }
+const BACKOFFICE_ROLES = new Set(['SUPERVISOR', 'HR', 'PAYROLL', 'FINANCE', 'ADMIN', 'AUDITOR']);
 
-  const authState = await auth();
-  const { userId, orgId, orgRole, getToken } = authState;
-  const user = userId ? await currentUser() : null;
-  const linkedEmployee = userId ? await resolveLinkedEmployee(getToken) : null;
-  const metadata = user?.publicMetadata as Record<string, unknown> | undefined;
-  const employeeId = linkedEmployee?.id ?? stringValue(metadata?.employeeId);
-  const organizationId = linkedEmployee?.organizationId ?? orgId ?? stringValue(metadata?.organizationId);
-  const session: BackofficeSession | null = user && employeeId && organizationId ? {
-    employeeId,
-    organizationId,
-    employeeNumber: linkedEmployee?.employeeNumber ?? stringValue(metadata?.employeeNumber) ?? 'ADMIN-001',
-    name: linkedEmployee?.name ?? user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'Herrera Administrator',
-    email: linkedEmployee?.email ?? user.primaryEmailAddress?.emailAddress ?? '',
-    role: formatRole(linkedEmployee?.role ?? orgRole ?? stringValue(metadata?.accessLevel) ?? stringValue(metadata?.role)),
-    expiresAt: Date.now() + 8 * 60 * 60 * 1000,
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const auth = await loadAuthState();
+  const session: BackofficeSession | null = auth.employee && auth.expiresAt ? {
+    employeeId: auth.employee.id,
+    organizationId: auth.employee.organizationId,
+    employeeNumber: auth.employee.employeeNumber,
+    name: auth.employee.name,
+    email: auth.employee.email,
+    role: formatRole(auth.employee.role),
+    expiresAt: auth.expiresAt,
   } : null;
+
   return (
     <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
       <body>
-        <ClerkProvider>
-          {session
-            ? <SessionProvider session={session}><AppShell>{children}</AppShell></SessionProvider>
-            : user
-              ? <AccessSetupRequired />
-              : children}
-        </ClerkProvider>
+        {session
+          ? <SessionProvider session={session}><AppShell>{children}</AppShell></SessionProvider>
+          : auth.signedIn
+            ? <AccessSetupRequired />
+            : children}
       </body>
     </html>
   );
 }
 
-async function resolveLinkedEmployee(getToken: () => Promise<string | null>): Promise<LinkedEmployee | null> {
+async function loadAuthState(): Promise<{
+  signedIn: boolean;
+  employee: LinkedEmployee | null;
+  expiresAt: number | null;
+}> {
   try {
-    const token = await getToken();
-    if (!token) return null;
+    const supabase = await createClient();
+    const { data: claimsData } = await supabase.auth.getClaims();
+    if (!claimsData?.claims?.sub) return { signedIn: false, employee: null, expiresAt: null };
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) return { signedIn: false, employee: null, expiresAt: null };
+
+    const employee = await resolveLinkedEmployee(accessToken);
+    return {
+      signedIn: true,
+      employee,
+      expiresAt: sessionData.session?.expires_at ? sessionData.session.expires_at * 1000 : Date.now() + 60 * 60 * 1000,
+    };
+  } catch {
+    return { signedIn: false, employee: null, expiresAt: null };
+  }
+}
+
+async function resolveLinkedEmployee(accessToken: string): Promise<LinkedEmployee | null> {
+  try {
     const apiUrl = (process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api').replace(/\/$/u, '');
-    const headers = new Headers();
-    headers.set('authorization', `${['Bear', 'er'].join('')} ${token}`);
-    const response = await fetch(`${apiUrl}/workforce/session`, { headers, cache: 'no-store' });
+    const response = await fetch(`${apiUrl}/workforce/session`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    });
     if (!response.ok) return null;
     const payload = await response.json() as { employee?: LinkedEmployee };
-    return payload.employee ?? null;
+    const employee = payload.employee ?? null;
+    return employee && BACKOFFICE_ROLES.has(employee.role) ? employee : null;
   } catch {
     return null;
   }
@@ -92,16 +98,12 @@ function AccessSetupRequired() {
     <main className="statePanel">
       <span className="stateIcon" aria-hidden="true">!</span>
       <h1>Account setup required</h1>
-      <p>Your sign-in email must match an active employee record in Herrera Attend. Ask an administrator to check your employee email and account status.</p>
+      <p>Your verified Supabase email must match an active employee with back-office access. Ask an administrator to check your employee email, role, and account status.</p>
+      <LogoutButton />
     </main>
   );
 }
 
-function stringValue(value: unknown) {
-  return typeof value === 'string' && value ? value : undefined;
-}
-
-function formatRole(role: string | undefined) {
-  const normalized = role?.replace(/^org:/u, '').replaceAll('_', ' ').toLowerCase() ?? 'admin';
-  return normalized.replace(/\b\w/gu, character => character.toUpperCase());
+function formatRole(role: string) {
+  return role.replaceAll('_', ' ').toLowerCase().replace(/\b\w/gu, character => character.toUpperCase());
 }
