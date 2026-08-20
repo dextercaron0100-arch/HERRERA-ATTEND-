@@ -1,9 +1,11 @@
 'use client';
 
-import { Building2, Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
+import { Building2, KeyRound, Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { apiRequest, appConfig } from '../lib/api';
+import { createClient } from '../lib/supabase/client';
 import { ErrorPanel, LoadingPanel } from './feedback';
+import { useOptionalSession } from './session-provider';
 
 type Worksite = { id: string; name: string };
 type Employee = {
@@ -21,6 +23,11 @@ const roles = ['EMPLOYEE', 'SUPERVISOR', 'HR', 'PAYROLL', 'FINANCE', 'ADMIN', 'A
 const emptyForm = { employeeNumber: '', name: '', email: '', role: 'EMPLOYEE', worksiteId: '' };
 
 export function WorkforceEmployeesView() {
+  const session = useOptionalSession();
+  const supabase = useMemo(() => createClient(), []);
+  const normalizedRole = session?.role.replaceAll(' ', '_').toUpperCase();
+  const [mounted, setMounted] = useState(false);
+  const canResetPasswords = mounted && ['HR', 'ADMIN', 'SUPER_ADMIN'].includes(normalizedRole ?? '');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [worksites, setWorksites] = useState<Worksite[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -30,6 +37,7 @@ export function WorkforceEmployeesView() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resettingEmployeeId, setResettingEmployeeId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -45,6 +53,7 @@ export function WorkforceEmployeesView() {
     finally { setLoading(false); }
   }, []);
 
+  useEffect(() => { setMounted(true); }, []);
   useEffect(() => { void load(); }, [load]);
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -70,6 +79,21 @@ export function WorkforceEmployeesView() {
       setMessage(`${employee.name} has been ${active ? 'activated' : 'suspended'}.`); await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to update the account.'); }
     finally { setSaving(false); }
+  }
+
+  async function sendPasswordReset(employee: Employee) {
+    setResettingEmployeeId(employee.id); setError(''); setMessage('');
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(employee.email.trim().toLowerCase(), {
+        redirectTo: 'com.herrera.attend://reset-password',
+      });
+      if (resetError) throw resetError;
+      setMessage(`A password reset link was sent to ${employee.email}. The employee should open it on the device with the HERRERA ATTEND app.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to send the password reset email.');
+    } finally {
+      setResettingEmployeeId(null);
+    }
   }
 
   function startWorksiteAssignment(employee: Employee) {
@@ -101,6 +125,6 @@ export function WorkforceEmployeesView() {
     {error && employees.length > 0 && <div className="errorMessage" role="alert">{error}</div>}
     {showForm && <section className="panel" aria-labelledby="employee-form-title"><div className="panelHead"><div><h2 id="employee-form-title">Onboard staff member</h2><p>Create the workforce profile and select the minimum access the person needs.</p></div><ShieldCheck size={22}/></div><form onSubmit={submit}><div className="filters"><label className="fieldLabel"><span>Employee number</span><input required maxLength={40} value={form.employeeNumber} onChange={event => setForm({...form, employeeNumber:event.target.value})} placeholder="EMP-001"/></label><label className="fieldLabel growField"><span>Full name</span><input required maxLength={120} value={form.name} onChange={event => setForm({...form, name:event.target.value})} placeholder="Juan Dela Cruz"/></label><label className="fieldLabel growField"><span>Work email</span><input required type="email" value={form.email} onChange={event => setForm({...form, email:event.target.value})} placeholder="juan@company.com"/></label><label className="fieldLabel"><span>Access role</span><select value={form.role} onChange={event => setForm({...form, role:event.target.value})}>{roles.map(role => <option key={role} value={role}>{role === 'ADMIN' ? 'Super Admin' : role.replaceAll('_',' ')}</option>)}</select></label><label className="fieldLabel growField"><span>Primary worksite</span><select value={form.worksiteId} onChange={event => setForm({...form, worksiteId:event.target.value})}><option value="">Unassigned</option>{worksites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><button disabled={saving} type="submit">{saving ? 'Saving…' : 'Create staff profile'}</button></div></form></section>}
     {worksiteEmployee && <section className="panel" aria-labelledby="worksite-assignment-title"><div className="panelHead"><div><h2 id="worksite-assignment-title">Assign worksite</h2><p>Choose the mobile login and attendance location for {worksiteEmployee.name}.</p></div><Building2 size={22}/></div><form onSubmit={assignWorksite}><div className="filters"><label className="fieldLabel growField"><span>Employee</span><input disabled value={`${worksiteEmployee.employeeNumber} — ${worksiteEmployee.name}`}/></label><label className="fieldLabel growField"><span>Primary worksite</span><select value={selectedWorksiteId} onChange={event => setSelectedWorksiteId(event.target.value)}><option value="">Unassigned</option>{worksites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><button disabled={saving} type="submit">{saving ? 'Saving…' : 'Save assignment'}</button><button type="button" className="secondary" disabled={saving} onClick={() => setWorksiteEmployee(null)}>Cancel</button></div></form></section>}
-    <section className="panel"><div className="panelHead"><div><h2>Staff directory</h2><p>{employees.filter(employee => employee.active).length} active · {employees.filter(employee => !employee.active).length} suspended</p></div><label className="searchField"><Search size={15}/><span className="srOnly">Search employees</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search people"/></label></div>{loading ? <LoadingPanel label="Loading employees…"/> : error && !employees.length ? <ErrorPanel message={error} retry={() => void load()}/> : <div className="tableWrap" tabIndex={0} role="region" aria-label="Staff directory"><table><thead><tr><th scope="col">Employee</th><th scope="col">Number</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Worksite</th><th scope="col">Access</th><th scope="col">Actions</th></tr></thead><tbody>{visible.length ? visible.map(employee => <tr key={employee.id} className={employee.active ? '' : 'mutedRow'}><td><span className="employeeCell"><span className="miniAvatar">{employee.name.split(' ').slice(0,2).map(part => part[0]).join('').toUpperCase()}</span><strong>{employee.name}</strong></span></td><td>{employee.employeeNumber}</td><td>{employee.email}</td><td><span className="pill">{employee.role === 'ADMIN' ? 'SUPER ADMIN' : employee.role}</span></td><td>{employee.worksite?.name ?? 'Unassigned'}</td><td><span className={`pill ${employee.active ? 'successPill' : 'dangerPill'}`}>{employee.active ? <UserCheck size={12}/> : <UserX size={12}/>} {employee.active ? 'Active' : 'Suspended'}</span></td><td><div className="rowActions"><button type="button" className="secondary compactButton" disabled={saving} onClick={() => startWorksiteAssignment(employee)}>{employee.worksite ? 'Change worksite' : 'Assign worksite'}</button><button type="button" className="secondary compactButton" disabled={saving} onClick={() => void setActive(employee, !employee.active)}>{employee.active ? 'Suspend' : 'Activate'}</button></div></td></tr>) : <tr><td colSpan={7}><div className="emptyTable"><Users size={22}/> No employees match your search.</div></td></tr>}</tbody></table></div>}</section>
+    <section className="panel"><div className="panelHead"><div><h2>Staff directory</h2><p>{employees.filter(employee => employee.active).length} active · {employees.filter(employee => !employee.active).length} suspended</p></div><label className="searchField"><Search size={15}/><span className="srOnly">Search employees</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search people"/></label></div>{loading ? <LoadingPanel label="Loading employees…"/> : error && !employees.length ? <ErrorPanel message={error} retry={() => void load()}/> : <div className="tableWrap" tabIndex={0} role="region" aria-label="Staff directory"><table><thead><tr><th scope="col">Employee</th><th scope="col">Number</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Worksite</th><th scope="col">Access</th><th scope="col">Actions</th></tr></thead><tbody>{visible.length ? visible.map(employee => <tr key={employee.id} className={employee.active ? '' : 'mutedRow'}><td><span className="employeeCell"><span className="miniAvatar">{employee.name.split(' ').slice(0,2).map(part => part[0]).join('').toUpperCase()}</span><strong>{employee.name}</strong></span></td><td>{employee.employeeNumber}</td><td>{employee.email}</td><td><span className="pill">{employee.role === 'ADMIN' ? 'SUPER ADMIN' : employee.role}</span></td><td>{employee.worksite?.name ?? 'Unassigned'}</td><td><span className={`pill ${employee.active ? 'successPill' : 'dangerPill'}`}>{employee.active ? <UserCheck size={12}/> : <UserX size={12}/>} {employee.active ? 'Active' : 'Suspended'}</span></td><td><div className="rowActions"><button type="button" className="secondary compactButton" disabled={saving || resettingEmployeeId !== null} onClick={() => startWorksiteAssignment(employee)}>{employee.worksite ? 'Change worksite' : 'Assign worksite'}</button>{canResetPasswords && <button type="button" className="secondary compactButton" disabled={saving || resettingEmployeeId !== null} onClick={() => void sendPasswordReset(employee)}><KeyRound size={13}/>{resettingEmployeeId === employee.id ? 'Sending…' : 'Reset password'}</button>}<button type="button" className="secondary compactButton" disabled={saving || resettingEmployeeId !== null} onClick={() => void setActive(employee, !employee.active)}>{employee.active ? 'Suspend' : 'Activate'}</button></div></td></tr>) : <tr><td colSpan={7}><div className="emptyTable"><Users size={22}/> No employees match your search.</div></td></tr>}</tbody></table></div>}</section>
   </>;
 }
