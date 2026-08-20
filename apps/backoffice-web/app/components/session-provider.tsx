@@ -16,6 +16,16 @@ export function SessionProvider({ session, children }: { session: BackofficeSess
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }
 
+// Dev login fallback (no Clerk): the API ignores bearer token contents when
+// AUTH_MODE=development, so any non-empty string satisfies the Authorization header.
+export function DevSessionProvider({ session, children }: { session: BackofficeSession; children: React.ReactNode }) {
+  useEffect(() => {
+    setApiTokenProvider(() => Promise.resolve('local-development'));
+    return () => setApiTokenProvider(null);
+  }, []);
+  return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
+}
+
 export function useSession() {
   const session = useContext(SessionContext);
   if (!session) throw new Error('useSession must be used within an authenticated SessionProvider');

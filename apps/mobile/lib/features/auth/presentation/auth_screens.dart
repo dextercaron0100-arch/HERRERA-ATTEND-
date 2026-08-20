@@ -8,36 +8,25 @@ const geoText = Color(0xff141d23);
 const geoMuted = Color(0xff5c5f60);
 
 class GeoAttendMark extends StatelessWidget {
-  const GeoAttendMark({super.key, this.size = 104, this.rounded = false});
+  const GeoAttendMark({super.key, this.size = 104});
   final double size;
-  final bool rounded;
 
   @override
   Widget build(BuildContext context) => Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(rounded ? 24 : size / 2),
+          borderRadius: BorderRadius.circular(size * .22),
           boxShadow: const [
             BoxShadow(
                 color: Color(0x18031635), blurRadius: 24, offset: Offset(0, 8))
           ],
         ),
-        child: Stack(alignment: Alignment.center, children: [
-          Icon(Icons.location_on_rounded, size: size * .62, color: geoNavy),
-          Positioned(
-            top: size * .26,
-            child: Container(
-              width: size * .18,
-              height: size * .18,
-              decoration: const BoxDecoration(
-                  color: Color(0xff83fc8e), shape: BoxShape.circle),
-              child:
-                  Icon(Icons.check_rounded, size: size * .13, color: geoNavy),
-            ),
-          ),
-        ]),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(size * .22),
+          child: Image.asset('assets/logo.png',
+              width: size, height: size, fit: BoxFit.cover),
+        ),
       );
 }
 
@@ -278,8 +267,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                     child: child)),
                                         child: const Hero(
                                             tag: 'geoattend-mark',
-                                            child: GeoAttendMark(
-                                                size: 92, rounded: true)))),
+                                            child:
+                                                GeoAttendMark(size: 92)))),
                                 const SizedBox(height: 24),
                                 const Text('HERRERA ATTEND',
                                     textAlign: TextAlign.center,
