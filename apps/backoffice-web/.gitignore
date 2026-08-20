@@ -1,5 +1,5 @@
 .vercel
 .env*.local
 
-# clerk configuration (can include secrets)
+# Legacy Clerk keyless files may still exist locally and can contain secrets.
 /.clerk/

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoattend_employee/core/database/app_database.dart';
 import 'package:geoattend_employee/data/clients/attendance_client.dart';
 import 'package:geoattend_employee/data/clients/mobile_client.dart';
@@ -31,7 +32,6 @@ final dioProvider = Provider<Dio>((ref) {
   if (kReleaseMode && !apiUrl.startsWith('https://')) {
     throw StateError('Production API_URL must use HTTPS.');
   }
-  final storage = ref.watch(secureStorageProvider);
   final dio = Dio(BaseOptions(
       baseUrl: apiUrl,
       connectTimeout: const Duration(seconds: 8),
@@ -39,9 +39,9 @@ final dioProvider = Provider<Dio>((ref) {
       sendTimeout: const Duration(seconds: 12),
       headers: {'accept': 'application/json'}));
   dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) async {
-    final token = await storage.read(key: 'access_token');
-    if (token != null && token.isNotEmpty) {
-      options.headers['authorization'] = 'Bearer $token';
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session != null && session.accessToken.isNotEmpty) {
+      options.headers['authorization'] = 'Bearer ${session.accessToken}';
     }
     handler.next(options);
   }));
@@ -82,8 +82,6 @@ class AuthSession {
 }
 
 class AuthController extends Notifier<AuthSession> {
-  static const demoUsername = 'EMP-001';
-  static const demoPassword = 'Herrera123!';
   @override
   AuthSession build() {
     Future.microtask(_restore);
@@ -93,15 +91,14 @@ class AuthController extends Notifier<AuthSession> {
   Future<void> _restore() async {
     final storage = ref.read(secureStorageProvider);
     final remembered = await storage.read(key: 'remember_session') == 'true';
-    final employeeId = await storage.read(key: 'employee_id');
-    state = AuthSession(
-        initialized: true,
-        authenticated: remembered && employeeId != null,
-        employeeId: employeeId,
-        organizationId: await storage.read(key: 'organization_id'),
-        worksiteId: await storage.read(key: 'worksite_id'),
-        employeeNumber: await storage.read(key: 'employee_number'),
-        name: await storage.read(key: 'employee_name'));
+    if (!remembered || Supabase.instance.client.auth.currentSession == null) {
+      if (!remembered) await Supabase.instance.client.auth.signOut();
+      state = const AuthSession(initialized: true, authenticated: false);
+      return;
+    }
+    if (!await _loadEmployee(remember: true)) {
+      await logout();
+    }
   }
 
   Future<bool> login(
@@ -109,16 +106,48 @@ class AuthController extends Notifier<AuthSession> {
       required String password,
       required bool remember}) async {
     try {
-      final response = await ref.read(dioProvider).post<Map<String, dynamic>>(
-          '/mobile/auth/login',
-          data: {'username': username.trim(), 'password': password});
-      final data = response.data;
-      final employee = data?['employee'];
-      if (data == null || employee is! Map<String, dynamic>) return false;
-      await _completeLogin(
-          remember: remember,
-          accessToken: data['accessToken'] as String,
-          employee: employee);
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+          email: username.trim().toLowerCase(), password: password);
+      if (response.session == null) return false;
+      final accepted = await _loadEmployee(remember: remember);
+      if (!accepted) await Supabase.instance.client.auth.signOut();
+      return accepted;
+    } on AuthException {
+      return false;
+    } on DioException {
+      return false;
+    }
+  }
+
+  Future<bool> requestPasswordReset(String email) async {
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+          email.trim().toLowerCase(),
+          redirectTo: 'com.herrera.attend://reset-password');
+      return true;
+    } on AuthException {
+      return false;
+    }
+  }
+
+  Future<bool> updatePassword(String password) async {
+    try {
+      await Supabase.instance.client.auth
+          .updateUser(UserAttributes(password: password));
+      return _loadEmployee(remember: true);
+    } on AuthException {
+      return false;
+    }
+  }
+
+  Future<bool> _loadEmployee({required bool remember}) async {
+    try {
+      final response = await ref
+          .read(dioProvider)
+          .get<Map<String, dynamic>>('/workforce/session');
+      final employee = response.data?['employee'];
+      if (employee is! Map<String, dynamic>) return false;
+      await _completeLogin(remember: remember, employee: employee);
       return true;
     } on DioException {
       return false;
@@ -126,9 +155,7 @@ class AuthController extends Notifier<AuthSession> {
   }
 
   Future<void> _completeLogin(
-      {required bool remember,
-      required String accessToken,
-      required Map<String, dynamic> employee}) async {
+      {required bool remember, required Map<String, dynamic> employee}) async {
     final storage = ref.read(secureStorageProvider);
     if (remember) {
       await storage.write(key: 'remember_session', value: 'true');
@@ -136,7 +163,7 @@ class AuthController extends Notifier<AuthSession> {
       await storage.delete(key: 'remember_session');
     }
     final worksite = employee['worksite'];
-    await storage.write(key: 'access_token', value: accessToken);
+    await storage.delete(key: 'access_token');
     await storage.write(key: 'employee_id', value: employee['id'] as String);
     await storage.write(
         key: 'organization_id', value: employee['organizationId'] as String);
@@ -159,23 +186,13 @@ class AuthController extends Notifier<AuthSession> {
   }
 
   Future<bool> biometricLogin() async {
+    if (Supabase.instance.client.auth.currentSession == null) return false;
     final authenticated = await verifyStrongBiometric(
         reason: 'Verify your identity to open HERRERA ATTEND');
     if (authenticated) {
-      final storage = ref.read(secureStorageProvider);
-      final employeeId = await storage.read(key: 'employee_id');
-      if (employeeId == null) return false;
-      await storage.write(key: 'remember_session', value: 'true');
-      state = AuthSession(
-          initialized: true,
-          authenticated: true,
-          employeeId: employeeId,
-          organizationId: await storage.read(key: 'organization_id'),
-          worksiteId: await storage.read(key: 'worksite_id'),
-          employeeNumber: await storage.read(key: 'employee_number'),
-          name: await storage.read(key: 'employee_name'));
+      return _loadEmployee(remember: true);
     }
-    return authenticated;
+    return false;
   }
 
   Future<bool> verifyStrongBiometric({required String reason}) async {
@@ -200,6 +217,7 @@ class AuthController extends Notifier<AuthSession> {
 
   Future<void> logout() async {
     final storage = ref.read(secureStorageProvider);
+    await Supabase.instance.client.auth.signOut();
     await storage.delete(key: 'remember_session');
     await storage.delete(key: 'access_token');
     await storage.delete(key: 'employee_id');

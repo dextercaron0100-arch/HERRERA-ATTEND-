@@ -1,14 +1,20 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { PrismaService } from '../prisma.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
 export type GeoAttendIdentity = {
   subject: string;
-  employeeId?: string;
-  organizationId?: string;
-  role?: string;
+  employeeId: string;
+  organizationId: string;
+  role: string;
 };
 
 type RequestShape = {
@@ -18,21 +24,12 @@ type RequestShape = {
   user?: GeoAttendIdentity;
 };
 
-type CachedIdentity = {
-  identity: GeoAttendIdentity;
-  expiresAt: number;
-};
-
-const BUSINESS_ROLES = new Set(['EMPLOYEE', 'SUPERVISOR', 'HR', 'PAYROLL', 'FINANCE', 'ADMIN', 'AUDITOR']);
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
 @Injectable()
 export class AuthGuard implements CanActivate {
-  private readonly mode = process.env.AUTH_MODE ?? 'development';
-  private readonly jwks = process.env.JWT_JWKS_URL
-    ? createRemoteJWKSet(new URL(process.env.JWT_JWKS_URL))
+  private readonly supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/u, '');
+  private readonly jwks = this.supabaseUrl
+    ? createRemoteJWKSet(new URL(`${this.supabaseUrl}/auth/v1/.well-known/jwks.json`))
     : undefined;
-  private readonly identityCache = new Map<string, CachedIdentity>();
 
   constructor(
     private readonly reflector: Reflector,
@@ -40,81 +37,55 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [context.getHandler(), context.getClass()])) return true;
-
-    const request = context.switchToHttp().getRequest<RequestShape>();
-    if (this.mode === 'development') {
-      request.user = { subject: 'local-development', role: 'ADMIN' };
+    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [context.getHandler(), context.getClass()])) {
       return true;
     }
 
+    const request = context.switchToHttp().getRequest<RequestShape>();
     const authorization = request.headers.authorization;
     const header = Array.isArray(authorization) ? authorization[0] : authorization;
     if (!header?.startsWith('Bearer ')) throw new UnauthorizedException('Bearer token required');
-    if (!this.jwks || !process.env.JWT_ISSUER) {
-      throw new UnauthorizedException('JWT verification is not configured');
+    if (!this.jwks || !this.supabaseUrl) {
+      throw new UnauthorizedException('Supabase JWT verification is not configured');
     }
 
     let payload: JWTPayload;
     try {
       ({ payload } = await jwtVerify(header.slice(7), this.jwks, {
-        issuer: process.env.JWT_ISSUER,
+        issuer: `${this.supabaseUrl}/auth/v1`,
+        audience: 'authenticated',
       }));
-      if (process.env.JWT_AUDIENCE && payload.aud && !this.matchesAudience(payload.aud, process.env.JWT_AUDIENCE)) {
-        throw new Error('Unexpected token audience');
-      }
     } catch {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw new UnauthorizedException('Invalid or expired Supabase token');
     }
 
-    let identity: GeoAttendIdentity = {
-      subject: payload.sub ?? '',
-      employeeId: this.claim(payload, 'employee_id') ?? this.nestedClaim(payload, 'public_metadata', 'employeeId'),
-      organizationId: this.claim(payload, 'organization_id') ?? this.claim(payload, 'org_id')
-        ?? this.nestedClaim(payload, 'public_metadata', 'organizationId') ?? this.nestedClaim(payload, 'o', 'id'),
-      role: this.normalizeRole(
-        this.claim(payload, 'role') ?? this.claim(payload, 'org_role')
-          ?? this.nestedClaim(payload, 'public_metadata', 'accessLevel')
-          ?? this.nestedClaim(payload, 'public_metadata', 'role')
-          ?? this.nestedClaim(payload, 'o', 'rol'),
-      ),
-    };
-
-    if (!identity.subject) throw new UnauthorizedException('Required identity claims are missing');
-    if (this.requiresEmployeeResolution(identity)) {
-      identity = await this.resolveEmployeeIdentity(payload, identity);
-    }
-    if (!identity.employeeId || !identity.organizationId || !identity.role) {
-      throw new UnauthorizedException('This account is not linked to an active Herrera employee');
-    }
-
+    if (!payload.sub) throw new UnauthorizedException('Supabase token subject is missing');
+    const identity = await this.resolveEmployeeIdentity(payload);
     this.assertTenantConsistency(request, identity);
     request.user = identity;
     return true;
   }
 
-  private requiresEmployeeResolution(identity: GeoAttendIdentity) {
-    return !identity.employeeId || !UUID_PATTERN.test(identity.employeeId)
-      || !identity.organizationId || !UUID_PATTERN.test(identity.organizationId)
-      || !identity.role || !BUSINESS_ROLES.has(identity.role);
-  }
-
-  private async resolveEmployeeIdentity(payload: JWTPayload, identity: GeoAttendIdentity): Promise<GeoAttendIdentity> {
-    const cached = this.identityCache.get(identity.subject);
-    if (cached && cached.expiresAt > Date.now()) return cached.identity;
-
-    const email = this.claim(payload, 'email')
-      ?? this.claim(payload, 'primary_email')
-      ?? this.nestedClaim(payload, 'public_metadata', 'email')
-      ?? await this.fetchClerkEmail(identity.subject);
-    if (!email) throw new UnauthorizedException('The identity token does not include an email address');
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const employees = await this.db.employee.findMany({
-      where: { active: true },
-      select: { id: true, organizationId: true, role: true, email: true },
+  private async resolveEmployeeIdentity(payload: JWTPayload): Promise<GeoAttendIdentity> {
+    const subject = payload.sub!;
+    const linked = await this.db.employee.findUnique({
+      where: { authUserId: subject },
+      select: { id: true, authUserId: true, organizationId: true, role: true, active: true },
     });
-    const matches = employees.filter(employee => employee.email.trim().toLowerCase() === normalizedEmail);
+    if (linked) {
+      if (!linked.active) throw new UnauthorizedException('This employee account is suspended');
+      return this.identity(subject, linked);
+    }
+
+    const email = this.stringClaim(payload, 'email')?.trim().toLowerCase();
+    if (!email) {
+      throw new UnauthorizedException('This Supabase account is not linked to a Herrera employee');
+    }
+
+    const matches = await this.db.employee.findMany({
+      where: { active: true, email: { equals: email, mode: 'insensitive' } },
+      select: { id: true, authUserId: true, organizationId: true, role: true, active: true },
+    });
     if (matches.length === 0) {
       throw new UnauthorizedException('No active Herrera employee uses this email address');
     }
@@ -123,57 +94,43 @@ export class AuthGuard implements CanActivate {
     }
 
     const employee = matches[0];
-    const resolved: GeoAttendIdentity = {
-      subject: identity.subject,
+    if (employee.authUserId && employee.authUserId !== subject) {
+      throw new UnauthorizedException('This employee is already linked to another Supabase account');
+    }
+    if (!employee.authUserId) {
+      const linkedNow = await this.db.employee.updateMany({
+        where: { id: employee.id, authUserId: null },
+        data: { authUserId: subject },
+      });
+      if (linkedNow.count === 0) {
+        const current = await this.db.employee.findUnique({
+          where: { id: employee.id },
+          select: { authUserId: true },
+        });
+        if (current?.authUserId !== subject) {
+          throw new UnauthorizedException('This employee was linked to another Supabase account');
+        }
+      }
+    }
+
+    return this.identity(subject, employee);
+  }
+
+  private identity(
+    subject: string,
+    employee: { id: string; organizationId: string; role: string },
+  ): GeoAttendIdentity {
+    return {
+      subject,
       employeeId: employee.id,
       organizationId: employee.organizationId,
       role: employee.role,
     };
-    this.identityCache.set(identity.subject, { identity: resolved, expiresAt: Date.now() + 5 * 60 * 1000 });
-    return resolved;
   }
 
-  private async fetchClerkEmail(subject: string): Promise<string | undefined> {
-    const secretKey = process.env.CLERK_SECRET_KEY;
-    if (!secretKey) return undefined;
-    try {
-      const response = await fetch(`https://api.clerk.com/v1/users/${subject}`, {
-        headers: { Authorization: `Bearer ${secretKey}` },
-      });
-      if (!response.ok) return undefined;
-      const user = (await response.json()) as {
-        primary_email_address_id?: string;
-        email_addresses?: { id: string; email_address: string }[];
-      };
-      const primary = user.email_addresses?.find(
-        entry => entry.id === user.primary_email_address_id,
-      );
-      return primary?.email_address ?? user.email_addresses?.[0]?.email_address;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private matchesAudience(actual: string | string[], expected: string) {
-    return Array.isArray(actual) ? actual.includes(expected) : actual === expected;
-  }
-
-  private claim(payload: JWTPayload, name: string): string | undefined {
+  private stringClaim(payload: JWTPayload, name: string) {
     const value = payload[name];
     return typeof value === 'string' && value.length > 0 ? value : undefined;
-  }
-
-  private nestedClaim(payload: JWTPayload, parent: string, name: string): string | undefined {
-    const container = payload[parent];
-    if (!container || typeof container !== 'object' || Array.isArray(container)) return undefined;
-    const value = (container as Record<string, unknown>)[name];
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
-  }
-
-  private normalizeRole(value: string | undefined): string | undefined {
-    const normalized = value?.replace(/^org:/u, '').replaceAll('-', '_').replaceAll(' ', '_').toUpperCase();
-    if (normalized === 'SUPER_ADMIN') return 'ADMIN';
-    return normalized && BUSINESS_ROLES.has(normalized) ? normalized : undefined;
   }
 
   private assertTenantConsistency(request: RequestShape, identity: GeoAttendIdentity) {
@@ -181,7 +138,7 @@ export class AuthGuard implements CanActivate {
     if (supplied.organizationId && supplied.organizationId !== identity.organizationId) {
       throw new ForbiddenException('Cross-organization access denied');
     }
-    if (supplied.actorId && (!identity.employeeId || supplied.actorId !== identity.employeeId)) {
+    if (supplied.actorId && supplied.actorId !== identity.employeeId) {
       throw new ForbiddenException('Actor identity does not match token');
     }
     if (identity.role === 'EMPLOYEE' && supplied.employeeId && supplied.employeeId !== identity.employeeId) {

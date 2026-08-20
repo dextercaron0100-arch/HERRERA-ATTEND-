@@ -110,10 +110,14 @@ class _SplashScreenState extends State<SplashScreen>
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen(
-      {super.key, required this.onLogin, required this.onBiometric});
+      {super.key,
+      required this.onLogin,
+      required this.onBiometric,
+      required this.onPasswordReset});
   final Future<bool> Function(String username, String password, bool remember)
       onLogin;
   final Future<bool> Function() onBiometric;
+  final Future<bool> Function(String email) onPasswordReset;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -175,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() {
       _submitting = false;
       if (!accepted) {
-        _error = 'Incorrect employee ID or password.';
+        _error = 'Incorrect work email or password.';
         _shake.forward(from: 0);
       }
     });
@@ -196,10 +200,24 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  Future<void> _passwordReset() async {
+    final email = _username.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _error = 'Enter your work email first.');
+      return;
+    }
+    final sent = await widget.onPasswordReset(email);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(sent
+            ? 'If this account exists, a password reset email has been sent.'
+            : 'Password recovery is temporarily unavailable.')));
+  }
+
   void _notConfigured(String feature) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              '$feature will be available after identity-provider setup.')));
+              '$feature is not configured. Contact your Herrera administrator.')));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -267,8 +285,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                     child: child)),
                                         child: const Hero(
                                             tag: 'geoattend-mark',
-                                            child:
-                                                GeoAttendMark(size: 92)))),
+                                            child: GeoAttendMark(size: 92)))),
                                 const SizedBox(height: 24),
                                 const Text('HERRERA ATTEND',
                                     textAlign: TextAlign.center,
@@ -289,41 +306,20 @@ class _LoginScreenState extends State<LoginScreen>
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                         fontSize: 14, color: geoMuted)),
-                                const SizedBox(height: 20),
-                                Container(
-                                    padding: const EdgeInsets.all(13),
-                                    decoration: BoxDecoration(
-                                        color: const Color(0xffecf5fe),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                            color: const Color(0xffd8e2ff))),
-                                    child: const Row(children: [
-                                      Icon(Icons.science_outlined,
-                                          size: 20, color: geoNavy),
-                                      SizedBox(width: 10),
-                                      Expanded(
-                                          child: Text(
-                                              'TEST LOGIN\nEmployee ID: EMP-001   Password: Herrera123!',
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  height: 1.5,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: geoNavy)))
-                                    ])),
                                 const SizedBox(height: 24),
-                                _FieldLabel('EMPLOYEE ID OR EMAIL'),
+                                _FieldLabel('WORK EMAIL'),
                                 const SizedBox(height: 8),
                                 TextFormField(
                                   controller: _username,
                                   textInputAction: TextInputAction.next,
-                                  autofillHints: const [AutofillHints.username],
+                                  keyboardType: TextInputType.emailAddress,
+                                  autofillHints: const [AutofillHints.email],
                                   decoration: const InputDecoration(
-                                      prefixIcon:
-                                          Icon(Icons.person_outline_rounded),
-                                      hintText: 'Enter your ID or email'),
+                                      prefixIcon: Icon(Icons.email_outlined),
+                                      hintText: 'name@company.com'),
                                   validator: (value) =>
                                       value == null || value.trim().isEmpty
-                                          ? 'Enter your employee ID or email'
+                                          ? 'Enter your work email'
                                           : null,
                                 ),
                                 const SizedBox(height: 20),
@@ -381,8 +377,9 @@ class _LoginScreenState extends State<LoginScreen>
                                                         color: geoMuted)),
                                               ])),
                                       TextButton(
-                                          onPressed: () => _notConfigured(
-                                              'Password recovery'),
+                                          onPressed: _submitting
+                                              ? null
+                                              : _passwordReset,
                                           child:
                                               const Text('Forgot password?')),
                                     ]),

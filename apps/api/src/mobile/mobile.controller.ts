@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -11,11 +10,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { PayrollService } from '../payroll/payroll.service';
-import { Public } from '../auth/public.decorator';
-import { MobileLoginDto, RegisterDeviceDto } from './mobile.dto';
+import { RegisterDeviceDto } from './mobile.dto';
 
 @Controller('mobile')
 export class MobileController {
@@ -23,38 +20,6 @@ export class MobileController {
     private readonly db: PrismaService,
     private readonly payrollService: PayrollService,
   ) {}
-
-  @Public()
-  @Post('auth/login')
-  async login(@Body() dto: MobileLoginDto) {
-    if ((process.env.AUTH_MODE ?? 'development') !== 'development') {
-      throw new ForbiddenException(
-        'Password login is disabled; use the configured identity provider.',
-      );
-    }
-    const expected = process.env.DEMO_PASSWORD ?? 'Herrera123!';
-    if (dto.password !== expected) {
-      throw new UnauthorizedException('Invalid employee ID or password');
-    }
-    const employee = await this.db.employee.findFirst({
-      where: {
-        active: true,
-        OR: [
-          { employeeNumber: { equals: dto.username, mode: 'insensitive' } },
-          { email: { equals: dto.username, mode: 'insensitive' } },
-        ],
-      },
-      include: { worksite: true, department: true },
-    });
-    if (!employee) {
-      throw new UnauthorizedException('Invalid employee ID or password');
-    }
-    return {
-      accessToken: `development.${employee.id}.${randomUUID()}`,
-      expiresIn: 28800,
-      employee: this.employeeIdentity(employee),
-    };
-  }
 
   @Get('employees/:id/overview')
   async overview(@Param('id') id: string) {

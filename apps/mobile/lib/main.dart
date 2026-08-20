@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoattend_employee/core/services/app_services.dart';
 import 'package:geoattend_employee/data/clients/attendance_client.dart';
 import 'package:geoattend_employee/features/attendance/presentation/attendance_history.dart';
@@ -8,6 +12,7 @@ import 'package:geoattend_employee/features/attendance/presentation/attendance_h
 import 'package:geoattend_employee/features/attendance/presentation/gps_verification.dart';
 import 'package:geoattend_employee/features/attendance/presentation/gps_verification_error.dart';
 import 'package:geoattend_employee/features/auth/presentation/auth_screens.dart';
+import 'package:geoattend_employee/features/auth/presentation/password_reset_screen.dart';
 import 'package:geoattend_employee/features/device/presentation/device_registration.dart';
 import 'package:geoattend_employee/features/leave/presentation/leave_dashboard.dart';
 import 'package:geoattend_employee/features/leave/presentation/request_page.dart';
@@ -18,7 +23,48 @@ import 'package:geoattend_employee/features/profile/presentation/readiness_page.
 import 'package:geoattend_employee/features/schedule/presentation/monthly_schedule.dart';
 import 'package:geoattend_employee/features/schedule/presentation/weekly_schedule.dart';
 
-void main() => runApp(const ProviderScope(child: GeoAttendApp()));
+const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const supabasePublishableKey =
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (supabaseUrl.isEmpty || supabasePublishableKey.isEmpty) {
+    throw StateError(
+        'SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY must be supplied with --dart-define.');
+  }
+  await Supabase.initialize(
+      url: supabaseUrl,
+      publishableKey: supabasePublishableKey,
+      authOptions: const FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.pkce,
+          localStorage: SecureSupabaseLocalStorage()));
+  runApp(const ProviderScope(child: GeoAttendApp()));
+}
+
+class SecureSupabaseLocalStorage extends LocalStorage {
+  const SecureSupabaseLocalStorage();
+
+  static const _key = 'supabase_auth_session';
+  static const _storage = FlutterSecureStorage(aOptions: AndroidOptions());
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<bool> hasAccessToken() async =>
+      (await _storage.read(key: _key))?.isNotEmpty ?? false;
+
+  @override
+  Future<String?> accessToken() => _storage.read(key: _key);
+
+  @override
+  Future<void> removePersistedSession() => _storage.delete(key: _key);
+
+  @override
+  Future<void> persistSession(String persistSessionString) =>
+      _storage.write(key: _key, value: persistSessionString);
+}
 
 CustomTransitionPage<void> _appPage(GoRouterState state, Widget child,
         {bool emphasized = false}) =>
@@ -83,12 +129,27 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
                     if (authenticated && context.mounted) context.go('/clock');
                     return authenticated;
                   },
+                  onPasswordReset: (email) => ref
+                      .read(authControllerProvider.notifier)
+                      .requestPasswordReset(email),
                 ),
                 emphasized: true)),
         GoRoute(
             path: '/clock',
             pageBuilder: (context, state) =>
                 _appPage(state, const ClockPage(), emphasized: true)),
+        GoRoute(
+            path: '/reset-password',
+            pageBuilder: (context, state) =>
+                _appPage(state, PasswordResetScreen(onUpdate: (password) async {
+                  final updated = await ref
+                      .read(authControllerProvider.notifier)
+                      .updatePassword(password);
+                  if (context.mounted) {
+                    context.go(updated ? '/clock' : '/login');
+                  }
+                  return updated;
+                }), emphasized: true)),
         GoRoute(
             path: '/history',
             pageBuilder: (context, state) =>
@@ -148,11 +209,36 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
       ],
     ));
 
-class GeoAttendApp extends ConsumerWidget {
+class GeoAttendApp extends ConsumerStatefulWidget {
   const GeoAttendApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GeoAttendApp> createState() => _GeoAttendAppState();
+}
+
+class _GeoAttendAppState extends ConsumerState<GeoAttendApp> {
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen(
+      (state) {
+        if (state.event == AuthChangeEvent.passwordRecovery) {
+          ref.read(routerProvider).go('/reset-password');
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(connectivitySyncProvider);
     return MaterialApp.router(
         debugShowCheckedModeBanner: false,

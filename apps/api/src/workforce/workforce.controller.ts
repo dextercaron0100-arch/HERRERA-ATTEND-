@@ -23,7 +23,7 @@ class WorksiteDto { @IsUUID() organizationId!:string; @IsString() name!:string; 
   @Get('session') async session(@Req() request:AuthenticatedRequest){
     const identity=request.user;
     if(!identity?.employeeId||!identity.organizationId) throw new UnauthorizedException('Employee identity is unavailable');
-    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true}});
+    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true,worksite:{select:{id:true,name:true}}}});
     if(!employee) throw new NotFoundException('Active employee record not found');
     return {employee};
   }

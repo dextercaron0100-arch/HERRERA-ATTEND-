@@ -1,27 +1,12 @@
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse, type NextRequest } from 'next/server';
-import { isClerkConfigured } from './app/lib/auth-mode';
-import { SESSION_COOKIE, verifySessionToken } from './app/lib/session';
+import type { NextRequest } from 'next/server';
+import { updateSession } from './app/lib/supabase/proxy';
 
-const isPublicRoute = createRouteMatcher(['/login(.*)', '/api/auth/(login|logout)']);
-
-async function devAuthMiddleware(request: NextRequest) {
-  if (isPublicRoute(request)) return NextResponse.next();
-  const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
-  if (!session) return NextResponse.redirect(new URL('/login', request.url));
-  return NextResponse.next();
+export async function proxy(request: NextRequest) {
+  return updateSession(request);
 }
-
-export default isClerkConfigured
-  ? clerkMiddleware(async (auth, request) => {
-      if (!isPublicRoute(request)) await auth.protect();
-    }, { frontendApiProxy: { enabled: true } })
-  : devAuthMiddleware;
 
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    '/__clerk(.*)',
-    '/(api|trpc)(.*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
