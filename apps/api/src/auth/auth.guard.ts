@@ -15,12 +15,16 @@ export type GeoAttendIdentity = {
   employeeId: string;
   organizationId: string;
   role: string;
+  passwordResetRequired: boolean;
 };
 
 type RequestShape = {
   headers: Record<string, string | string[] | undefined>;
   body?: Record<string, unknown>;
   query?: Record<string, unknown>;
+  method?: string;
+  originalUrl?: string;
+  url?: string;
   user?: GeoAttendIdentity;
 };
 
@@ -61,6 +65,7 @@ export class AuthGuard implements CanActivate {
 
     if (!payload.sub) throw new UnauthorizedException('Supabase token subject is missing');
     const identity = await this.resolveEmployeeIdentity(payload);
+    this.assertPasswordResetAccess(request, identity);
     this.assertTenantConsistency(request, identity);
     request.user = identity;
     return true;
@@ -70,7 +75,7 @@ export class AuthGuard implements CanActivate {
     const subject = payload.sub!;
     const linked = await this.db.employee.findUnique({
       where: { authUserId: subject },
-      select: { id: true, authUserId: true, organizationId: true, role: true, active: true },
+      select: { id: true, authUserId: true, organizationId: true, role: true, active: true, passwordResetRequired: true },
     });
     if (linked) {
       if (!linked.active) throw new UnauthorizedException('This employee account is suspended');
@@ -84,7 +89,7 @@ export class AuthGuard implements CanActivate {
 
     const matches = await this.db.employee.findMany({
       where: { active: true, email: { equals: email, mode: 'insensitive' } },
-      select: { id: true, authUserId: true, organizationId: true, role: true, active: true },
+      select: { id: true, authUserId: true, organizationId: true, role: true, active: true, passwordResetRequired: true },
     });
     if (matches.length === 0) {
       throw new UnauthorizedException('No active Herrera employee uses this email address');
@@ -118,14 +123,24 @@ export class AuthGuard implements CanActivate {
 
   private identity(
     subject: string,
-    employee: { id: string; organizationId: string; role: string },
+    employee: { id: string; organizationId: string; role: string; passwordResetRequired?: boolean },
   ): GeoAttendIdentity {
     return {
       subject,
       employeeId: employee.id,
       organizationId: employee.organizationId,
       role: employee.role,
+      passwordResetRequired: employee.passwordResetRequired === true,
     };
+  }
+
+  private assertPasswordResetAccess(request: RequestShape, identity: GeoAttendIdentity) {
+    if (!identity.passwordResetRequired) return;
+    const method = request.method?.toUpperCase() ?? '';
+    const path = (request.originalUrl ?? request.url ?? '').split('?')[0];
+    const allowed = (method === 'GET' && /\/workforce\/session$/u.test(path))
+      || (method === 'POST' && /\/workforce\/(mobile-session|password-reset\/complete)$/u.test(path));
+    if (!allowed) throw new ForbiddenException('You must choose a new password before continuing');
   }
 
   private stringClaim(payload: JWTPayload, name: string) {

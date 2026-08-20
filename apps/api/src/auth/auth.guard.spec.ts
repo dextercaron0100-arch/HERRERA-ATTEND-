@@ -12,6 +12,7 @@ const context = (request: Record<string, unknown>) => ({
 
 type GuardInternals = {
   resolveEmployeeIdentity(payload: JWTPayload): Promise<unknown>;
+  assertPasswordResetAccess(request: unknown, identity: unknown): void;
   assertTenantConsistency(request: unknown, identity: unknown): void;
 };
 
@@ -40,6 +41,7 @@ describe('AuthGuard', () => {
           organizationId: 'org-1',
           role: 'HR',
           active: true,
+          passwordResetRequired: false,
         }),
       },
     } as unknown as PrismaService;
@@ -50,6 +52,7 @@ describe('AuthGuard', () => {
       employeeId: 'employee-1',
       organizationId: 'org-1',
       role: 'HR',
+      passwordResetRequired: false,
     });
   });
 
@@ -63,6 +66,7 @@ describe('AuthGuard', () => {
           organizationId: 'org-1',
           role: 'EMPLOYEE',
           active: true,
+          passwordResetRequired: false,
         }]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -84,6 +88,7 @@ describe('AuthGuard', () => {
           organizationId: 'org-1',
           role: 'EMPLOYEE',
           active: false,
+          passwordResetRequired: false,
         }),
       },
     } as unknown as PrismaService;
@@ -96,7 +101,20 @@ describe('AuthGuard', () => {
     const guard = new AuthGuard(new Reflector(), {} as PrismaService) as unknown as GuardInternals;
     expect(() => guard.assertTenantConsistency(
       { headers: {}, query: { organizationId: 'other-org' } },
-      { subject: 'user', organizationId: 'org-1', employeeId: 'employee-1', role: 'ADMIN' },
+      { subject: 'user', organizationId: 'org-1', employeeId: 'employee-1', role: 'ADMIN', passwordResetRequired: false },
     )).toThrow(ForbiddenException);
+  });
+
+  it('blocks normal API access until a required password reset is completed', () => {
+    const guard = new AuthGuard(new Reflector(), {} as PrismaService) as unknown as GuardInternals;
+    const identity = { subject: 'user', organizationId: 'org-1', employeeId: 'employee-1', role: 'EMPLOYEE', passwordResetRequired: true };
+    expect(() => guard.assertPasswordResetAccess(
+      { headers: {}, method: 'GET', originalUrl: '/api/mobile/overview' },
+      identity,
+    )).toThrow(ForbiddenException);
+    expect(() => guard.assertPasswordResetAccess(
+      { headers: {}, method: 'POST', originalUrl: '/api/workforce/password-reset/complete' },
+      identity,
+    )).not.toThrow();
   });
 });

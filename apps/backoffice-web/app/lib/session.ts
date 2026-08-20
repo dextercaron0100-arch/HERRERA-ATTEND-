@@ -5,5 +5,6 @@ export type BackofficeSession = {
   name: string;
   email: string;
   role: string;
+  passwordResetRequired: boolean;
   expiresAt: number;
 };

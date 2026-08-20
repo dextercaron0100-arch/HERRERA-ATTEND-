@@ -35,14 +35,14 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
     setState(() {
       _saving = false;
       if (!updated) {
-        _error = 'Unable to update the password. Request a new recovery link.';
+        _error = 'Unable to update the password. Check your connection and try again.';
       }
     });
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Reset password')),
+        appBar: AppBar(title: const Text('Set new password')),
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(

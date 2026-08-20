@@ -1,8 +1,11 @@
-import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Header, NotFoundException, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { Role } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsEmail, IsEnum, IsInt, IsLatitude, IsLongitude, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { PrismaService } from '../prisma.service';
 import type { GeoAttendIdentity } from '../auth/auth.guard';
+import { SupabaseAdminService } from '../auth/supabase-admin.service';
 import { decideMobileLogin, distanceMeters } from '../attendance/geofence';
 
 type AuthenticatedRequest = { user?: GeoAttendIdentity };
@@ -18,22 +21,23 @@ class EmployeeDto {
 }
 class EmployeeStatusDto { @IsBoolean() active!: boolean; }
 class EmployeeWorksiteDto { @ValidateIf((_object,value)=>value!==null) @IsUUID() worksiteId!: string | null; }
+class CompletePasswordResetDto { @IsString() @MinLength(8) @MaxLength(128) password!: string; }
 class WorksiteDto { @IsUUID() organizationId!:string; @IsString() @MinLength(2) @MaxLength(120) name!:string; @IsLatitude() latitude!:number; @IsLongitude() longitude!:number; @IsInt() @IsPositive() @Max(5000) radiusMeters!:number; @IsInt() @Min(1) @Max(1000) maxAccuracyMeters!:number; }
 class MobileLoginLocationDto { @IsLatitude() latitude!:number; @IsLongitude() longitude!:number; @IsNumber() @Min(0) @Max(10000) accuracyMeters!:number; }
 
 @Controller('workforce') export class WorkforceController {
-  constructor(private readonly db:PrismaService){}
+  constructor(private readonly db:PrismaService, private readonly supabaseAdmin:SupabaseAdminService){}
   @Get('session') async session(@Req() request:AuthenticatedRequest){
     const identity=request.user;
     if(!identity?.employeeId||!identity.organizationId) throw new UnauthorizedException('Employee identity is unavailable');
-    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true,worksite:{select:{id:true,name:true}}}});
+    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true,passwordResetRequired:true,worksite:{select:{id:true,name:true}}}});
     if(!employee) throw new NotFoundException('Active employee record not found');
     return {employee};
   }
   @Post('mobile-session') async mobileSession(@Body() dto:MobileLoginLocationDto, @Req() request:AuthenticatedRequest){
     const identity=request.user;
     if(!identity?.employeeId||!identity.organizationId) throw new UnauthorizedException('Employee identity is unavailable');
-    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true,worksite:{select:{id:true,name:true,latitude:true,longitude:true,radiusMeters:true,maxAccuracyMeters:true}}}});
+    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,organizationId:true,employeeNumber:true,name:true,email:true,role:true,passwordResetRequired:true,worksite:{select:{id:true,name:true,latitude:true,longitude:true,radiusMeters:true,maxAccuracyMeters:true}}}});
     if(!employee) throw new NotFoundException('Active employee record not found');
     if(!employee.worksite) throw new ForbiddenException('No worksite is assigned to this employee. Contact HR before signing in.');
     const distance=distanceMeters(dto.latitude,dto.longitude,Number(employee.worksite.latitude),Number(employee.worksite.longitude));
@@ -53,6 +57,44 @@ class MobileLoginLocationDto { @IsLatitude() latitude!:number; @IsLongitude() lo
       await transaction.auditLog.create({data:{organizationId:dto.organizationId,actorId:request.user?.employeeId ?? request.user?.subject ?? 'system',action:'EMPLOYEE_CREATED',entityType:'Employee',entityId:employee.id,metadata:{employeeNumber:employee.employeeNumber,email:employee.email,role:employee.role}}});
       return employee;
     });
+  }
+  @Post('employees/:id/password-reset')
+  @Throttle({default:{limit:5,ttl:60000}})
+  @Header('Cache-Control','private, no-store')
+  async resetEmployeePassword(@Param('id') id:string, @Req() request:AuthenticatedRequest){
+    this.requirePeopleAdmin(request.user);
+    const employee=await this.db.employee.findUnique({where:{id},select:{id:true,authUserId:true,organizationId:true,employeeNumber:true,email:true,role:true}});
+    if(!employee) throw new NotFoundException('Employee not found');
+    if(request.user?.organizationId&&request.user.organizationId!==employee.organizationId) throw new ForbiddenException('Cross-organization access denied');
+    if(request.user?.employeeId===id) throw new ForbiddenException('Use Account Security to change your own password');
+    const actorRole=this.normalizedRole(request.user?.role);
+    if(actorRole==='HR'&&employee.role===Role.ADMIN) throw new ForbiddenException('HR cannot reset a Super Admin password');
+
+    const authUserId=await this.supabaseAdmin.resolveUserId(employee.authUserId,employee.email);
+    const temporaryPassword=`Ha1!${randomBytes(9).toString('base64url')}`;
+    await this.supabaseAdmin.updatePassword(authUserId,temporaryPassword);
+    await this.db.$transaction(async transaction=>{
+      await transaction.employee.update({where:{id},data:{authUserId,passwordResetRequired:true}});
+      await transaction.auditLog.create({data:{organizationId:employee.organizationId,actorId:request.user?.employeeId??request.user?.subject??'system',action:'EMPLOYEE_TEMPORARY_PASSWORD_ISSUED',entityType:'Employee',entityId:id,metadata:{employeeNumber:employee.employeeNumber}}});
+    });
+    return {temporaryPassword};
+  }
+  @Post('password-reset/complete')
+  @Throttle({default:{limit:10,ttl:60000}})
+  @Header('Cache-Control','private, no-store')
+  async completePasswordReset(@Body() dto:CompletePasswordResetDto, @Req() request:AuthenticatedRequest){
+    const identity=request.user;
+    if(!identity?.employeeId||!identity.organizationId) throw new UnauthorizedException('Employee identity is unavailable');
+    const employee=await this.db.employee.findFirst({where:{id:identity.employeeId,organizationId:identity.organizationId,active:true},select:{id:true,authUserId:true,organizationId:true,employeeNumber:true,passwordResetRequired:true}});
+    if(!employee) throw new NotFoundException('Active employee record not found');
+    if(!employee.passwordResetRequired) return {completed:true};
+    if(!employee.authUserId) throw new NotFoundException('Supabase login account is not linked');
+    await this.supabaseAdmin.updatePassword(employee.authUserId,dto.password);
+    await this.db.$transaction(async transaction=>{
+      await transaction.employee.update({where:{id:employee.id},data:{passwordResetRequired:false}});
+      await transaction.auditLog.create({data:{organizationId:employee.organizationId,actorId:employee.id,action:'EMPLOYEE_PASSWORD_RESET_COMPLETED',entityType:'Employee',entityId:employee.id,metadata:{employeeNumber:employee.employeeNumber}}});
+    });
+    return {completed:true};
   }
   @Patch('employees/:id/status') async updateEmployeeStatus(@Param('id') id:string, @Body() dto:EmployeeStatusDto, @Req() request:AuthenticatedRequest){
     this.requirePeopleAdmin(request.user);
@@ -94,9 +136,10 @@ class MobileLoginLocationDto { @IsLatitude() latitude!:number; @IsLongitude() lo
   }
 
   private requirePeopleAdmin(identity?:GeoAttendIdentity){
-    const role = identity?.role?.replace(/^org:/u, '').replaceAll(' ', '_').toUpperCase();
+    const role = this.normalizedRole(identity?.role);
     if (!role || !['ADMIN','SUPER_ADMIN','HR'].includes(role)) throw new ForbiddenException('Administrator or HR access required');
   }
+  private normalizedRole(role?:string){return role?.replace(/^org:/u,'').replaceAll(' ','_').toUpperCase();}
   private requireSameOrganization(identity:GeoAttendIdentity|undefined, organizationId:string){
     if(identity?.organizationId&&identity.organizationId!==organizationId) throw new ForbiddenException('Cross-organization access denied');
   }

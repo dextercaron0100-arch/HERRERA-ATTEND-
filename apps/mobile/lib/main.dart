@@ -97,6 +97,11 @@ CustomTransitionPage<void> _appPage(GoRouterState state, Widget child,
       },
     );
 
+String _sessionDestination(AuthSession session) {
+  if (!session.authenticated) return '/login';
+  return session.passwordResetRequired ? '/reset-password' : '/clock';
+}
+
 final routerProvider = Provider<GoRouter>((ref) => GoRouter(
       initialLocation: '/splash',
       routes: [
@@ -105,7 +110,7 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
             pageBuilder: (context, state) =>
                 _appPage(state, SplashScreen(onFinished: () {
                   final session = ref.read(authControllerProvider);
-                  context.go(session.authenticated ? '/clock' : '/login');
+                  context.go(_sessionDestination(session));
                 }), emphasized: true)),
         GoRoute(
             path: '/login',
@@ -119,14 +124,20 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
                             username: username,
                             password: password,
                             remember: remember);
-                    if (error == null && context.mounted) context.go('/clock');
+                    if (error == null && context.mounted) {
+                      context.go(_sessionDestination(
+                          ref.read(authControllerProvider)));
+                    }
                     return error;
                   },
                   onBiometric: () async {
                     final error = await ref
                         .read(authControllerProvider.notifier)
                         .biometricLogin();
-                    if (error == null && context.mounted) context.go('/clock');
+                    if (error == null && context.mounted) {
+                      context.go(_sessionDestination(
+                          ref.read(authControllerProvider)));
+                    }
                     return error;
                   },
                   onPasswordReset: (email) => ref

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { AppShell } from './components/app-shell';
 import { SessionProvider } from './components/session-provider';
 import { LogoutButton } from './components/logout-button';
+import { ForcedPasswordReset } from './components/forced-password-reset';
 import { createClient } from './lib/supabase/server';
 import type { BackofficeSession } from './lib/session';
 import 'leaflet/dist/leaflet.css';
@@ -23,6 +24,7 @@ type LinkedEmployee = {
   name: string;
   email: string;
   role: string;
+  passwordResetRequired: boolean;
 };
 
 const BACKOFFICE_ROLES = new Set(['SUPERVISOR', 'HR', 'PAYROLL', 'FINANCE', 'ADMIN', 'AUDITOR']);
@@ -36,6 +38,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     name: auth.employee.name,
     email: auth.employee.email,
     role: formatRole(auth.employee.role),
+    passwordResetRequired: auth.employee.passwordResetRequired,
     expiresAt: auth.expiresAt,
   } : null;
 
@@ -43,7 +46,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
       <body>
         {session
-          ? <SessionProvider session={session}><AppShell>{children}</AppShell></SessionProvider>
+          ? <SessionProvider session={session}>{session.passwordResetRequired ? <ForcedPasswordReset /> : <AppShell>{children}</AppShell>}</SessionProvider>
           : auth.signedIn
             ? <AccessSetupRequired />
             : children}
