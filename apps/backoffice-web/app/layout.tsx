@@ -5,6 +5,7 @@ import { SessionProvider } from './components/session-provider';
 import { LogoutButton } from './components/logout-button';
 import { createClient } from './lib/supabase/server';
 import type { BackofficeSession } from './lib/session';
+import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });

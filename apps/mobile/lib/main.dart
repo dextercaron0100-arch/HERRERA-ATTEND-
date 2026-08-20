@@ -113,21 +113,21 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
                 state,
                 LoginScreen(
                   onLogin: (username, password, remember) async {
-                    final accepted = await ref
+                    final error = await ref
                         .read(authControllerProvider.notifier)
                         .login(
                             username: username,
                             password: password,
                             remember: remember);
-                    if (accepted && context.mounted) context.go('/clock');
-                    return accepted;
+                    if (error == null && context.mounted) context.go('/clock');
+                    return error;
                   },
                   onBiometric: () async {
-                    final authenticated = await ref
+                    final error = await ref
                         .read(authControllerProvider.notifier)
                         .biometricLogin();
-                    if (authenticated && context.mounted) context.go('/clock');
-                    return authenticated;
+                    if (error == null && context.mounted) context.go('/clock');
+                    return error;
                   },
                   onPasswordReset: (email) => ref
                       .read(authControllerProvider.notifier)

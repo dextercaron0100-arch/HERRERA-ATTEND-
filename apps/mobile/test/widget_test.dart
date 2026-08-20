@@ -11,15 +11,15 @@ class TestAuthController extends AuthController {
       const AuthSession(initialized: true, authenticated: false);
 
   @override
-  Future<bool> login(
+  Future<String?> login(
       {required String username,
       required String password,
       required bool remember}) async {
     if (username != 'employee@example.com' || password != 'ValidPass123!') {
-      return false;
+      return 'Incorrect work email or password.';
     }
     state = const AuthSession(initialized: true, authenticated: true);
-    return true;
+    return null;
   }
 }
 

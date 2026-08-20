@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geoattend_employee/core/database/app_database.dart';
@@ -96,26 +97,25 @@ class AuthController extends Notifier<AuthSession> {
       state = const AuthSession(initialized: true, authenticated: false);
       return;
     }
-    if (!await _loadEmployee(remember: true)) {
+    if (await _loadEmployee(remember: true, verifyLocation: true) != null) {
       await logout();
     }
   }
 
-  Future<bool> login(
+  Future<String?> login(
       {required String username,
       required String password,
       required bool remember}) async {
     try {
       final response = await Supabase.instance.client.auth.signInWithPassword(
           email: username.trim().toLowerCase(), password: password);
-      if (response.session == null) return false;
-      final accepted = await _loadEmployee(remember: remember);
-      if (!accepted) await Supabase.instance.client.auth.signOut();
-      return accepted;
+      if (response.session == null) return 'Incorrect work email or password.';
+      final error =
+          await _loadEmployee(remember: remember, verifyLocation: true);
+      if (error != null) await Supabase.instance.client.auth.signOut();
+      return error;
     } on AuthException {
-      return false;
-    } on DioException {
-      return false;
+      return 'Incorrect work email or password.';
     }
   }
 
@@ -134,24 +134,72 @@ class AuthController extends Notifier<AuthSession> {
     try {
       await Supabase.instance.client.auth
           .updateUser(UserAttributes(password: password));
-      return _loadEmployee(remember: true);
+      return await _loadEmployee(remember: true, verifyLocation: true) == null;
     } on AuthException {
       return false;
     }
   }
 
-  Future<bool> _loadEmployee({required bool remember}) async {
+  Future<String?> _loadEmployee(
+      {required bool remember, required bool verifyLocation}) async {
     try {
-      final response = await ref
-          .read(dioProvider)
-          .get<Map<String, dynamic>>('/workforce/session');
+      final dio = ref.read(dioProvider);
+      final Response<Map<String, dynamic>> response;
+      if (verifyLocation) {
+        final position = await _currentLoginPosition();
+        response = await dio
+            .post<Map<String, dynamic>>('/workforce/mobile-session', data: {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'accuracyMeters': position.accuracy.clamp(0.1, 10000).toDouble(),
+        });
+      } else {
+        response = await dio.get<Map<String, dynamic>>('/workforce/session');
+      }
       final employee = response.data?['employee'];
-      if (employee is! Map<String, dynamic>) return false;
+      if (employee is! Map<String, dynamic>) {
+        return 'Your employee profile is not available. Contact HR.';
+      }
       await _completeLogin(remember: remember, employee: employee);
-      return true;
-    } on DioException {
-      return false;
+      return null;
+    } on StateError catch (error) {
+      return error.message;
+    } on DioException catch (error) {
+      return _apiErrorMessage(error);
     }
+  }
+
+  Future<Position> _currentLoginPosition() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      throw StateError(
+          'Turn on device location to sign in at your assigned worksite.');
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.deniedForever) {
+      throw StateError(
+          'Location permission is blocked. Enable it in device settings to sign in.');
+    }
+    if (permission != LocationPermission.whileInUse &&
+        permission != LocationPermission.always) {
+      throw StateError(
+          'Location permission is required to sign in at your assigned worksite.');
+    }
+    return Geolocator.getCurrentPosition(
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.high));
+  }
+
+  String _apiErrorMessage(DioException error) {
+    final data = error.response?.data;
+    if (data is Map<String, dynamic>) {
+      final message = data['message'];
+      if (message is String && message.isNotEmpty) return message;
+      if (message is List && message.isNotEmpty) return message.join(' ');
+    }
+    return 'Unable to verify your worksite location. Check your connection and try again.';
   }
 
   Future<void> _completeLogin(
@@ -185,14 +233,16 @@ class AuthController extends Notifier<AuthSession> {
         name: employee['name'] as String);
   }
 
-  Future<bool> biometricLogin() async {
-    if (Supabase.instance.client.auth.currentSession == null) return false;
+  Future<String?> biometricLogin() async {
+    if (Supabase.instance.client.auth.currentSession == null) {
+      return 'Sign in with your password before using biometrics.';
+    }
     final authenticated = await verifyStrongBiometric(
         reason: 'Verify your identity to open HERRERA ATTEND');
     if (authenticated) {
-      return _loadEmployee(remember: true);
+      return _loadEmployee(remember: true, verifyLocation: true);
     }
-    return false;
+    return 'Face or fingerprint verification was cancelled or unavailable.';
   }
 
   Future<bool> verifyStrongBiometric({required String reason}) async {

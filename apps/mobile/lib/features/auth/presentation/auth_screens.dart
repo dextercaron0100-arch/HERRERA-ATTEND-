@@ -114,9 +114,9 @@ class LoginScreen extends StatefulWidget {
       required this.onLogin,
       required this.onBiometric,
       required this.onPasswordReset});
-  final Future<bool> Function(String username, String password, bool remember)
-      onLogin;
-  final Future<bool> Function() onBiometric;
+  final Future<String?> Function(
+      String username, String password, bool remember) onLogin;
+  final Future<String?> Function() onBiometric;
   final Future<bool> Function(String email) onPasswordReset;
 
   @override
@@ -171,15 +171,15 @@ class _LoginScreenState extends State<LoginScreen>
     if (!mounted) {
       return;
     }
-    final accepted =
+    final error =
         await widget.onLogin(_username.text.trim(), _password.text, _remember);
     if (!mounted) {
       return;
     }
     setState(() {
       _submitting = false;
-      if (!accepted) {
-        _error = 'Incorrect work email or password.';
+      if (error != null) {
+        _error = error;
         _shake.forward(from: 0);
       }
     });
@@ -187,10 +187,10 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _biometricLogin() async {
     try {
-      if (!await widget.onBiometric() && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Face or fingerprint login is unavailable. Sign in once and enroll biometrics in Android settings.')));
+      final error = await widget.onBiometric();
+      if (error != null && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error)));
       }
     } catch (_) {
       if (mounted) {
