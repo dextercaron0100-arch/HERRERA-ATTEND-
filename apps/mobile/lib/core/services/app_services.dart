@@ -68,6 +68,7 @@ class AuthSession {
   const AuthSession(
       {required this.initialized,
       required this.authenticated,
+      this.passwordResetRequired = false,
       this.employeeId,
       this.organizationId,
       this.worksiteId,
@@ -75,6 +76,7 @@ class AuthSession {
       this.name});
   final bool initialized;
   final bool authenticated;
+  final bool passwordResetRequired;
   final String? employeeId;
   final String? organizationId;
   final String? worksiteId;
@@ -132,10 +134,18 @@ class AuthController extends Notifier<AuthSession> {
 
   Future<bool> updatePassword(String password) async {
     try {
-      await Supabase.instance.client.auth
-          .updateUser(UserAttributes(password: password));
-      return await _loadEmployee(remember: true, verifyLocation: true) == null;
+      if (state.passwordResetRequired) {
+        await ref.read(dioProvider).post<Map<String, dynamic>>(
+            '/workforce/password-reset/complete',
+            data: {'password': password});
+      } else {
+        await Supabase.instance.client.auth
+            .updateUser(UserAttributes(password: password));
+      }
+      return await _loadEmployee(remember: true, verifyLocation: false) == null;
     } on AuthException {
+      return false;
+    } on DioException {
       return false;
     }
   }
@@ -225,6 +235,7 @@ class AuthController extends Notifier<AuthSession> {
     state = AuthSession(
         initialized: true,
         authenticated: true,
+        passwordResetRequired: employee['passwordResetRequired'] == true,
         employeeId: employee['id'] as String,
         organizationId: employee['organizationId'] as String,
         worksiteId:

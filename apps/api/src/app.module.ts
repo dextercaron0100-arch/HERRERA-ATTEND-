@@ -20,5 +20,6 @@ import { CompensationController } from './compensation/compensation.controller';
 import { CompensationService } from './compensation/compensation.service';
 import { NotificationsController } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
-@Module({ imports:[ThrottlerModule.forRoot([{ ttl:60000, limit:120 }])], controllers:[HealthController, AttendanceController, WorkforceController, RequestsController, PayrollController, ReportsController, PilotController, MobileController, CompensationController, NotificationsController], providers:[PrismaService, AttendanceService, RequestsService, PayrollService, ReportsService, PilotService, CompensationService, NotificationsService, {provide:APP_GUARD,useClass:AuthGuard}, {provide:APP_GUARD,useClass:ThrottlerGuard}] })
+import { SupabaseAdminService } from './auth/supabase-admin.service';
+@Module({ imports:[ThrottlerModule.forRoot([{ ttl:60000, limit:120 }])], controllers:[HealthController, AttendanceController, WorkforceController, RequestsController, PayrollController, ReportsController, PilotController, MobileController, CompensationController, NotificationsController], providers:[PrismaService, AttendanceService, RequestsService, PayrollService, ReportsService, PilotService, CompensationService, NotificationsService, SupabaseAdminService, {provide:APP_GUARD,useClass:AuthGuard}, {provide:APP_GUARD,useClass:ThrottlerGuard}] })
 export class AppModule {}

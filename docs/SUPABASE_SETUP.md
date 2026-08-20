@@ -26,9 +26,12 @@ Set these variables on the API service:
 
 ```text
 SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_KEY
 CORS_ORIGINS=https://YOUR-BACKOFFICE-DOMAIN
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 ```
+
+`SUPABASE_SERVICE_ROLE_KEY` is server-only and is used when HR or a Super Admin issues a one-time temporary password. Never expose it through a `NEXT_PUBLIC_` variable or the mobile app.
 
 Set these variables on the back-office service:
 

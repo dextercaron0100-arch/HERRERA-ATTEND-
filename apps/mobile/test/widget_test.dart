@@ -23,6 +23,24 @@ class TestAuthController extends AuthController {
   }
 }
 
+class ForcedResetAuthController extends TestAuthController {
+  @override
+  Future<String?> login(
+      {required String username,
+      required String password,
+      required bool remember}) async {
+    final error = await super
+        .login(username: username, password: password, remember: remember);
+    if (error == null) {
+      state = const AuthSession(
+          initialized: true,
+          authenticated: true,
+          passwordResetRequired: true);
+    }
+    return error;
+  }
+}
+
 class MemoryAsyncStorage extends GotrueAsyncStorage {
   final _values = <String, String>{};
 
@@ -76,5 +94,26 @@ void main() {
     await tester.pump();
     expect(find.text('CLOCK IN'), findsOneWidget);
     expect(find.text('DAYS PRESENT'), findsOneWidget);
+  });
+
+  testWidgets('requires a new password after temporary-password login',
+      (tester) async {
+    await tester.pumpWidget(ProviderScope(overrides: [
+      connectivitySyncProvider.overrideWithValue(null),
+      authControllerProvider.overrideWith(ForcedResetAuthController.new),
+    ], child: const GeoAttendApp()));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    await tester.enterText(
+        find.byType(TextFormField).at(0), 'employee@example.com');
+    await tester.enterText(find.byType(TextFormField).at(1), 'ValidPass123!');
+    final loginButton = find.widgetWithText(FilledButton, 'Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    expect(find.text('Choose a new password'), findsOneWidget);
+    expect(find.text('Set new password'), findsOneWidget);
+    expect(find.text('CLOCK IN'), findsNothing);
   });
 }
